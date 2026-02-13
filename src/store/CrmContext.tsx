@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Contact, Campaign, ContactStatus, TouchLog, generateId, createEmptyWeekProgress, TouchOutcome } from '@/types/crm';
+import { Contact, Campaign, ContactStatus, TouchLog, generateId, createEmptyWeekProgress, TouchOutcome, isCallWeek } from '@/types/crm';
 import { defaultCampaigns } from '@/data/defaultCampaigns';
 
 interface CrmContextType {
@@ -8,7 +8,7 @@ interface CrmContextType {
   addContact: (contact: Omit<Contact, 'id' | 'weekProgress' | 'touchLogs' | 'currentWeek' | 'lastTouchDate' | 'nextTouchDate'>) => void;
   updateContact: (id: string, updates: Partial<Contact>) => void;
   deleteContact: (id: string) => void;
-  markTouchDone: (contactId: string, week: number, channel: 'LinkedIn' | 'Email') => void;
+  markTouchDone: (contactId: string, week: number, channel: 'LinkedIn' | 'Email' | 'Phone') => void;
   setWeekOutcome: (contactId: string, week: number, outcome: TouchOutcome | '') => void;
   setWeekNotes: (contactId: string, week: number, notes: string) => void;
   setContactStatus: (contactId: string, status: ContactStatus) => void;
@@ -61,13 +61,15 @@ export function CrmProvider({ children }: { children: ReactNode }) {
     setContacts(prev => prev.filter(c => c.id !== id));
   }, []);
 
-  const markTouchDone = useCallback((contactId: string, week: number, channel: 'LinkedIn' | 'Email') => {
+  const markTouchDone = useCallback((contactId: string, week: number, channel: 'LinkedIn' | 'Email' | 'Phone') => {
     setContacts(prev => prev.map(c => {
       if (c.id !== contactId) return c;
       const today = new Date().toISOString().split('T')[0];
       const wp = c.weekProgress.map(w => {
         if (w.week !== week) return w;
-        return channel === 'LinkedIn' ? { ...w, liDone: true } : { ...w, emailDone: true };
+        if (channel === 'LinkedIn') return { ...w, liDone: true };
+        if (channel === 'Email') return { ...w, emailDone: true };
+        return { ...w, phoneDone: true };
       });
 
       const weekData = wp.find(w => w.week === week)!;
@@ -86,8 +88,11 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       let newCurrentWeek = c.currentWeek;
       let nextTouchDate = c.nextTouchDate;
 
-      if (weekData.liDone && weekData.emailDone) {
-        // Both done for this week — advance
+      const hasCall = isCallWeek(week);
+      const allDone = weekData.liDone && weekData.emailDone && (!hasCall || weekData.phoneDone);
+
+      if (allDone) {
+        // All channels done for this week — advance
         if (week < 12) {
           newCurrentWeek = week + 1;
           const next = new Date();

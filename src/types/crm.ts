@@ -10,12 +10,16 @@ export interface WeekPreset {
   linkedInTouch: string;
   cta: string;
   asset: string;
+  callObjective?: string;
+  callTalkTrack?: string;
+  voicemailScript?: string;
 }
 
 export interface WeekProgress {
   week: number;
   liDone: boolean;
   emailDone: boolean;
+  phoneDone: boolean;
   outcome: TouchOutcome | '';
   notes: string;
   ctaUsed: string;
@@ -95,11 +99,18 @@ export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
+export const CALL_WEEKS = [1, 3, 5, 7, 9, 11];
+
+export function isCallWeek(week: number): boolean {
+  return CALL_WEEKS.includes(week);
+}
+
 export function createEmptyWeekProgress(): WeekProgress[] {
   return Array.from({ length: 12 }, (_, i) => ({
     week: i + 1,
     liDone: false,
     emailDone: false,
+    phoneDone: false,
     outcome: '' as const,
     notes: '',
     ctaUsed: '',
@@ -118,6 +129,9 @@ export function getStatusColor(status: ContactStatus): string {
 }
 
 export function getContactProgress(contact: Contact): number {
-  const completed = contact.weekProgress.filter(w => w.liDone && w.emailDone).length;
+  const completed = contact.weekProgress.filter(w => {
+    const hasCall = isCallWeek(w.week);
+    return w.liDone && w.emailDone && (!hasCall || w.phoneDone);
+  }).length;
   return Math.round((completed / 12) * 100);
 }

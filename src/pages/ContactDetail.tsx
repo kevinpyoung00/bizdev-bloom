@@ -120,7 +120,7 @@ export default function ContactDetail() {
             {Array.from({ length: 12 }, (_, i) => {
               const week = i + 1;
               const wp = contact.weekProgress[i];
-              const preset = presets[i] || { emailTheme: '', linkedInTouch: '', cta: '', asset: '' };
+              const preset = presets[i] || { emailTheme: '', linkedInTouch: '', cta: '', asset: '', callObjective: '', callTalkTrack: '', voicemailScript: '' };
               return (
                 <WeekPanel
                   key={week}
@@ -130,8 +130,12 @@ export default function ContactDetail() {
                   linkedInTouch={preset.linkedInTouch}
                   cta={preset.cta}
                   asset={preset.asset}
+                  callObjective={preset.callObjective}
+                  callTalkTrack={preset.callTalkTrack}
+                  voicemailScript={preset.voicemailScript}
                   liDone={wp.liDone}
                   emailDone={wp.emailDone}
+                  phoneDone={wp.phoneDone}
                   outcome={wp.outcome}
                   notes={wp.notes}
                   isCurrent={week === contact.currentWeek}
