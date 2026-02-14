@@ -244,13 +244,13 @@ function classifySignals(triggers: any): SignalSizes {
     }
   }
 
-  // C-suite
+  // C-suite — never Large, at most Medium
   const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
   if (cs) {
     const mo = cs.months_ago ?? cs.recency_months ?? null;
     if (mo !== null) {
-      if (mo <= 3) result.csuite_size = "large";
-      else if (mo <= 6) result.csuite_size = "medium";
+      if (mo <= 3) result.csuite_size = "medium";
+      else if (mo <= 6) result.csuite_size = "small";
     } else if (cs === true || (typeof cs === "object" && Object.keys(cs).length > 0)) {
       result.csuite_size = "medium";
     }
@@ -259,12 +259,11 @@ function classifySignals(triggers: any): SignalSizes {
   return result;
 }
 
-function computeStars(signals: SignalSizes, reachability: number): 1 | 2 | 3 {
+function computeStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
   const sizes = [signals.role_change_size, signals.hiring_size, signals.funding_size, signals.csuite_size].filter(Boolean) as string[];
   const largeCount = sizes.filter((s) => s === "large").length;
   const mediumCount = sizes.filter((s) => s === "medium").length;
   const smallCount = sizes.filter((s) => s === "small").length;
-  const reachReady = reachability >= 20;
 
   // ★★★
   if (largeCount >= 1) return 3;
@@ -336,7 +335,9 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   const normalized = guardrail ? 0 : Math.min(100, raw);
 
   const signals = classifySignals(triggers);
-  const stars = guardrail ? 1 : computeStars(signals, reachability >= 20 ? reachability : 0);
+  // reach-ready = has email or phone among contacts
+  const reachReady = (contacts || []).some((c: any) => c.email || c.phone);
+  const stars = guardrail ? 1 : computeStars(signals, reachReady);
 
   return {
     id: account.id,
