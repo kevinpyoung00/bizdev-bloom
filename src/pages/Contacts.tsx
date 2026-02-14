@@ -7,7 +7,7 @@ import ImportContacts from '@/components/crm/ImportContacts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Download, ArrowUpDown, Upload } from 'lucide-react';
+import { Plus, Search, Download, ArrowUpDown, Upload, ExternalLink, Linkedin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ContactStatus, getContactProgress } from '@/types/crm';
 
@@ -144,8 +144,37 @@ export default function Contacts() {
                       onClick={() => navigate(`/contacts/${contact.id}`)}
                       className="border-b border-border hover:bg-muted/30 cursor-pointer transition-colors"
                     >
-                      <td className="px-4 py-3 font-medium text-foreground">{contact.firstName} {contact.lastName}</td>
-                      <td className="px-4 py-3 text-foreground">{contact.company}</td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        <div className="flex items-center gap-2">
+                          <span>{contact.firstName} {contact.lastName}</span>
+                          {contact.linkedInUrl && (
+                            <a
+                              href={contact.linkedInUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="text-muted-foreground hover:text-primary transition-colors"
+                              title="LinkedIn Profile"
+                            >
+                              <Linkedin size={14} />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-foreground">
+                        {contact.company ? (
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(contact.company + ' website')}&btnI=1`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="hover:text-primary hover:underline transition-colors inline-flex items-center gap-1"
+                          >
+                            {contact.company}
+                            <ExternalLink size={12} className="opacity-0 group-hover:opacity-100" />
+                          </a>
+                        ) : '—'}
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground">{contact.rolePersona}</td>
                       <td className="px-4 py-3 text-muted-foreground">{contact.industry}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{campaign?.name || '—'}</td>
