@@ -146,6 +146,13 @@ export function reachStarsDisplay(stars: 0 | 1 | 2 | 3): string {
   return "☆☆☆";
 }
 
+/** Reach stars display with solid filled stars (same visual weight as signal stars) */
+export function reachStarsDisplaySolid(stars: 0 | 1 | 2 | 3): string {
+  const filled = "★".repeat(stars);
+  const empty = "☆".repeat(3 - stars);
+  return filled + empty;
+}
+
 /** Build a short signal summary string for table rows */
 export function signalSummary(triggers: any): string {
   if (!triggers) return "—";

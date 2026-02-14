@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import AccountDrawer from '@/components/lead-engine/AccountDrawer';
 import {
-  getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
+  getSignalStars, computeReachStars, signalStarsDisplay,
   getPriorityLabel, priorityBadgeColor, signalSummary
 } from '@/lib/leadPriority';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
@@ -22,17 +22,33 @@ function DualStarsBadge({ lead }: { lead: LeadWithAccount }) {
   const signalStars = getSignalStars(lead.reason, lead.account.triggers);
   const reachStars = computeReachStars(undefined, lead.reason);
   const priority = getPriorityLabel(signalStars);
+  const reachFilled = "★".repeat(reachStars) + "☆".repeat(3 - reachStars);
   return (
     <div className="flex flex-col items-start gap-0.5">
       <span className="text-sm font-bold tracking-wide" style={{ color: '#FFA500' }} title={`Signals: ${signalStars}`}>
         {signalStarsDisplay(signalStars)}
       </span>
-      <span className="text-xs font-bold tracking-wide" style={{ color: '#1E90FF' }} title={`Reach: ${reachStars}`}>
-        {reachStarsDisplay(reachStars)}
+      <span className="text-sm font-bold tracking-wide" style={{ color: '#1E90FF' }} title={`Reach: ${reachStars}`}>
+        {reachFilled}
       </span>
       <Badge variant="outline" className={`text-[9px] px-1.5 py-0 mt-0.5 ${priorityBadgeColor(priority)}`}>
         {priority.toUpperCase()}
       </Badge>
+    </div>
+  );
+}
+
+function StarsLegend() {
+  return (
+    <div className="flex items-center gap-6 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-bold" style={{ color: '#FFA500' }}>★</span>
+        <span>Signal Strength</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-bold" style={{ color: '#1E90FF' }}>★</span>
+        <span>Contact Reach</span>
+      </div>
     </div>
   );
 }
@@ -176,6 +192,8 @@ export default function LeadQueue() {
             </Button>
           </div>
         </div>
+
+        <StarsLegend />
 
         <Card>
           <CardContent className="p-0">
