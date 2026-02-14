@@ -16,11 +16,16 @@ interface DripWeekPanelProps {
   isGenerating: boolean;
   generatingChannel: string | null;
   locked: boolean; // true if not yet uploaded to D365
+  hasEmail?: boolean;
+  hasPhone?: boolean;
+  hasLinkedIn?: boolean;
+  isUnsubscribed?: boolean;
 }
 
 export default function DripWeekPanel({
   week, persona, industryKey, leadData,
   onGenerate, isGenerating, generatingChannel, locked,
+  hasEmail = true, hasPhone = true, hasLinkedIn = true, isUnsubscribed = false,
 }: DripWeekPanelProps) {
   const theme = getWeekTheme(week);
   const [drafts, setDrafts] = useState<Record<string, { subject?: string; body: string }>>({});
@@ -48,6 +53,7 @@ export default function DripWeekPanel({
   };
 
   const isWeek1 = week === 1;
+  const emailDisabled = isUnsubscribed || locked;
 
   return (
     <div className="border border-border rounded-lg p-4 bg-card">
@@ -61,12 +67,26 @@ export default function DripWeekPanel({
             <p className="text-xs text-muted-foreground">{theme.description}</p>
           </div>
         </div>
-        {locked && (
-          <Badge variant="outline" className="text-[9px] bg-warning/10 text-warning border-warning/30">
-            Upload to D365 first
-          </Badge>
-        )}
+        <div className="flex gap-1">
+          {locked && (
+            <Badge variant="outline" className="text-[9px] bg-warning/10 text-warning border-warning/30">
+              Upload to D365 first
+            </Badge>
+          )}
+          {isUnsubscribed && (
+            <Badge variant="outline" className="text-[9px] bg-destructive/10 text-destructive border-destructive/30">
+              Unsubscribed
+            </Badge>
+          )}
+        </div>
       </div>
+
+      {/* LinkedIn-first suggestion when email missing */}
+      {!hasEmail && !isUnsubscribed && (
+        <p className="text-[10px] text-muted-foreground mb-2 italic">
+          📌 No email on file — consider starting with LinkedIn outreach.
+        </p>
+      )}
 
       <div className="flex gap-2 mb-3">
         <Button
@@ -74,7 +94,8 @@ export default function DripWeekPanel({
           variant="outline"
           className="gap-1 text-xs"
           onClick={() => handleGenerate('email')}
-          disabled={locked || (isGenerating && generatingChannel === 'email')}
+          disabled={emailDisabled || (isGenerating && generatingChannel === 'email')}
+          title={isUnsubscribed ? 'Email suppressed — contact is unsubscribed' : undefined}
         >
           {isGenerating && generatingChannel === 'email' ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
           Email

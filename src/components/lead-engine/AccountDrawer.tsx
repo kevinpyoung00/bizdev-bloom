@@ -359,6 +359,10 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                       isGenerating={generateDrip.isPending}
                       generatingChannel={generatingChannel}
                       locked={isLocked}
+                      hasEmail={hasEmail}
+                      hasPhone={hasPhone}
+                      hasLinkedIn={hasLinkedIn}
+                      isUnsubscribed={!!(account as any).unsubscribed}
                     />
                   ))}
                 </div>
