@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import { z } from 'zod';
 import { useCrm } from '@/store/CrmContext';
 import { RolePersona, ContactSource, ContactStatus } from '@/types/crm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -82,6 +83,21 @@ function normalizeSource(val: string): ContactSource {
   }
   return 'List Upload';
 }
+
+const importContactSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(100),
+  company: z.string().trim().max(200).default(''),
+  title: z.string().trim().max(100).default(''),
+  rolePersona: z.string().trim().max(50).default(''),
+  industry: z.string().trim().max(100).default(''),
+  employeeCount: z.string().trim().max(20).default(''),
+  email: z.string().trim().max(255).refine(v => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), 'Invalid email').default(''),
+  linkedInUrl: z.string().trim().max(500).refine(v => !v || /^https?:\/\//i.test(v), 'Invalid URL').default(''),
+  phone: z.string().trim().max(30).default(''),
+  source: z.string().trim().max(50).default(''),
+  renewalMonth: z.string().trim().max(20).default(''),
+  notes: z.string().trim().max(2000).default(''),
+});
 
 type Step = 'upload' | 'map' | 'preview' | 'done';
 type TitleMode = 'filename' | 'custom';
@@ -176,33 +192,40 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
   const handleImport = () => {
     const today = new Date().toISOString().split('T')[0];
     let count = 0;
+    let skipped = 0;
     for (const row of rows) {
-      const nameRaw = mapping.name ? (row[mapping.name] || '').trim() : '';
-      if (!nameRaw) continue;
-      const { firstName, lastName } = splitName(nameRaw);
+      const raw: Record<string, string> = {};
+      for (const field of CONTACT_FIELDS) {
+        const col = mapping[field.key];
+        raw[field.key] = col ? (row[col] || '') : '';
+      }
 
-      const company = mapping.company ? (row[mapping.company] || '').trim() : '';
-      const roleRaw = mapping.rolePersona ? (row[mapping.rolePersona] || '') : '';
-      const sourceRaw = mapping.source ? (row[mapping.source] || '') : '';
+      const parsed = importContactSchema.safeParse(raw);
+      if (!parsed.success) {
+        skipped++;
+        continue;
+      }
+      const v = parsed.data;
+
+      const { firstName, lastName } = splitName(v.name);
 
       const noteParts: string[] = [];
       if (effectiveTitle) noteParts.push(`List: ${effectiveTitle}`);
-      const userNotes = mapping.notes ? (row[mapping.notes] || '') : '';
-      if (userNotes) noteParts.push(userNotes);
+      if (v.notes) noteParts.push(v.notes);
 
       addContact({
         firstName,
         lastName,
-        company,
-        title: mapping.title ? (row[mapping.title] || '') : '',
-        rolePersona: roleRaw ? normalizeRole(roleRaw) : 'Other',
-        industry: mapping.industry ? (row[mapping.industry] || '') : '',
-        employeeCount: mapping.employeeCount ? (row[mapping.employeeCount] || '') : '',
-        email: mapping.email ? (row[mapping.email] || '') : '',
-        linkedInUrl: mapping.linkedInUrl ? (row[mapping.linkedInUrl] || '') : '',
-        phone: mapping.phone ? (row[mapping.phone] || '') : '',
-        source: sourceRaw ? normalizeSource(sourceRaw) : 'List Upload',
-        renewalMonth: mapping.renewalMonth ? (row[mapping.renewalMonth] || '') : '',
+        company: v.company,
+        title: v.title,
+        rolePersona: v.rolePersona ? normalizeRole(v.rolePersona) : 'Other',
+        industry: v.industry,
+        employeeCount: v.employeeCount,
+        email: v.email,
+        linkedInUrl: v.linkedInUrl,
+        phone: v.phone,
+        source: v.source ? normalizeSource(v.source) : 'List Upload',
+        renewalMonth: v.renewalMonth,
         campaignId,
         status,
         startDate: today,
@@ -212,7 +235,11 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
     }
     setImportCount(count);
     setStep('done');
-    toast.success(`${count} contacts imported successfully!`);
+    if (skipped > 0) {
+      toast.success(`${count} contacts imported, ${skipped} rows skipped (invalid data)`);
+    } else {
+      toast.success(`${count} contacts imported successfully!`);
+    }
   };
 
   return (
