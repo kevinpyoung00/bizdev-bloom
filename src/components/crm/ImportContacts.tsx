@@ -4,14 +4,15 @@ import { useCrm } from '@/store/CrmContext';
 import { RolePersona, ContactSource, ContactStatus } from '@/types/crm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CONTACT_FIELDS: { key: string; label: string; required?: boolean }[] = [
-  { key: 'firstName', label: 'First Name', required: true },
-  { key: 'lastName', label: 'Last Name', required: true },
+  { key: 'name', label: 'Name', required: true },
   { key: 'company', label: 'Company', required: true },
   { key: 'title', label: 'Title' },
   { key: 'rolePersona', label: 'Role Persona' },
@@ -39,8 +40,7 @@ const SOURCE_MAP: Record<string, ContactSource> = {
 function guessMapping(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {};
   const patterns: Record<string, RegExp> = {
-    firstName: /first.?name|fname|first/i,
-    lastName: /last.?name|lname|last|surname/i,
+    name: /^name$|full.?name|contact.?name|first.?name|fname/i,
     company: /company|organization|org/i,
     title: /title|job.?title|position/i,
     rolePersona: /role|persona/i,
@@ -60,6 +60,13 @@ function guessMapping(headers: string[]): Record<string, string> {
   return map;
 }
 
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
 function normalizeRole(val: string): RolePersona {
   const lower = val.toLowerCase().trim();
   for (const [key, role] of Object.entries(ROLE_MAP)) {
@@ -77,6 +84,7 @@ function normalizeSource(val: string): ContactSource {
 }
 
 type Step = 'upload' | 'map' | 'preview' | 'done';
+type TitleMode = 'filename' | 'custom';
 
 interface Props {
   open: boolean;
@@ -93,6 +101,9 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
   const [status, setStatus] = useState<ContactStatus>('Unworked');
   const [importCount, setImportCount] = useState(0);
   const [fileName, setFileName] = useState('');
+  const [listTitle, setListTitle] = useState('');
+  const [titleMode, setTitleMode] = useState<TitleMode>('filename');
+  const [customTitle, setCustomTitle] = useState('');
 
   const reset = () => {
     setStep('upload');
@@ -103,10 +114,18 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
     setStatus('Unworked');
     setImportCount(0);
     setFileName('');
+    setListTitle('');
+    setTitleMode('filename');
+    setCustomTitle('');
   };
+
+  const getFileBaseName = (name: string) => name.replace(/\.(xlsx|xls|csv)$/i, '');
+
+  const effectiveTitle = titleMode === 'custom' ? customTitle : getFileBaseName(fileName);
 
   const handleFile = useCallback((file: File) => {
     setFileName(file.name);
+    setListTitle(file.name.replace(/\.(xlsx|xls|csv)$/i, ''));
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -158,13 +177,18 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
     const today = new Date().toISOString().split('T')[0];
     let count = 0;
     for (const row of rows) {
-      const firstName = mapping.firstName ? (row[mapping.firstName] || '').trim() : '';
-      const lastName = mapping.lastName ? (row[mapping.lastName] || '').trim() : '';
-      const company = mapping.company ? (row[mapping.company] || '').trim() : '';
-      if (!firstName && !lastName) continue;
+      const nameRaw = mapping.name ? (row[mapping.name] || '').trim() : '';
+      if (!nameRaw) continue;
+      const { firstName, lastName } = splitName(nameRaw);
 
+      const company = mapping.company ? (row[mapping.company] || '').trim() : '';
       const roleRaw = mapping.rolePersona ? (row[mapping.rolePersona] || '') : '';
       const sourceRaw = mapping.source ? (row[mapping.source] || '') : '';
+
+      const noteParts: string[] = [];
+      if (effectiveTitle) noteParts.push(`List: ${effectiveTitle}`);
+      const userNotes = mapping.notes ? (row[mapping.notes] || '') : '';
+      if (userNotes) noteParts.push(userNotes);
 
       addContact({
         firstName,
@@ -182,7 +206,7 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
         campaignId,
         status,
         startDate: today,
-        notes: mapping.notes ? (row[mapping.notes] || '') : '',
+        notes: noteParts.join('\n'),
       });
       count++;
     }
@@ -242,6 +266,32 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
         {/* MAP COLUMNS */}
         {step === 'map' && (
           <div className="space-y-4">
+            {/* List Title */}
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3 border border-border">
+              <Label className="text-sm font-medium">List Title</Label>
+              <RadioGroup value={titleMode} onValueChange={v => setTitleMode(v as TitleMode)} className="flex gap-4">
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="filename" id="title-filename" />
+                  <Label htmlFor="title-filename" className="text-xs font-normal cursor-pointer">
+                    Use file name: <span className="font-medium text-foreground">{getFileBaseName(fileName)}</span>
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="custom" id="title-custom" />
+                  <Label htmlFor="title-custom" className="text-xs font-normal cursor-pointer">Custom title</Label>
+                </div>
+              </RadioGroup>
+              {titleMode === 'custom' && (
+                <Input
+                  className="h-8 text-sm"
+                  placeholder="e.g. Q2 Florida Tech Prospects"
+                  value={customTitle}
+                  onChange={e => setCustomTitle(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{fileName}</span> — {rows.length} rows found. Map your columns below.
             </p>
@@ -313,9 +363,16 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
         {/* PREVIEW */}
         {step === 'preview' && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Previewing first {Math.min(5, rows.length)} of <span className="font-medium text-foreground">{rows.length}</span> contacts.
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Previewing first {Math.min(5, rows.length)} of <span className="font-medium text-foreground">{rows.length}</span> contacts.
+              </p>
+              {effectiveTitle && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
+                  {effectiveTitle}
+                </span>
+              )}
+            </div>
             <div className="overflow-x-auto border border-border rounded">
               <table className="w-full text-xs">
                 <thead>
@@ -350,6 +407,11 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
           <div className="text-center py-8 space-y-4">
             <CheckCircle2 size={48} className="mx-auto text-primary" />
             <p className="text-lg font-semibold text-foreground">{importCount} contacts imported!</p>
+            {effectiveTitle && (
+              <p className="text-sm text-muted-foreground">
+                List: <span className="font-medium text-foreground">{effectiveTitle}</span>
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               They're ready to use in your drip campaigns.
             </p>
