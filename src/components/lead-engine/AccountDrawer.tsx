@@ -53,7 +53,25 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
   if (!lead) return null;
   const { account, score, reason, priority_rank } = lead;
-  const r = reason || {};
+  const rawReason = reason || {};
+  // Normalize old field names (industry_fit, size_fit, geo_fit, bonus) to new names
+  const r = {
+    industry: rawReason.industry ?? rawReason.industry_fit ?? 0,
+    size: rawReason.size ?? rawReason.size_fit ?? 0,
+    hiring: rawReason.hiring ?? 0,
+    c_suite: rawReason.c_suite ?? 0,
+    recent_role_change: rawReason.recent_role_change ?? 0,
+    funding: rawReason.funding ?? 0,
+    reachability: rawReason.reachability ?? rawReason.bonus ?? 0,
+    raw: rawReason.raw ?? null,
+    normalized: rawReason.normalized ?? null,
+    guardrail: rawReason.guardrail ?? null,
+    signals: rawReason.signals ?? null,
+    stars: rawReason.stars ?? null,
+  };
+  // Compute raw/normalized if not stored
+  const computedRaw = r.raw ?? (r.industry + r.size + r.hiring + r.c_suite + r.recent_role_change + r.funding + r.reachability);
+  const computedNormalized = r.normalized ?? Math.min(100, Math.round((computedRaw / 110) * 1000) / 10);
   const disposition = account.disposition || 'active';
   const stars = getStars(r, account.triggers);
   const signals = signalDetails(account.triggers);
@@ -217,7 +235,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               <Separator className="my-2" />
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Raw / Normalized</span>
-                <span className="font-bold text-foreground">{r.raw ?? 0} / 110 → {r.normalized ?? score}</span>
+                <span className="font-bold text-foreground">{computedRaw} / 110 → {computedNormalized}</span>
               </div>
             </div>
           </div>
