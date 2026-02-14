@@ -268,10 +268,18 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Parse optional params
+    // Parse optional params from URL or body
     const url = new URL(req.url);
-    const dryRun = url.searchParams.get("dry_run") === "true";
-    const runDate = url.searchParams.get("run_date") || new Date().toISOString().split("T")[0];
+    let dryRun = url.searchParams.get("dry_run") === "true";
+    let runDate = url.searchParams.get("run_date") || new Date().toISOString().split("T")[0];
+
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        if (body.dry_run) dryRun = true;
+        if (body.run_date) runDate = body.run_date;
+      } catch { /* no body */ }
+    }
 
     // Check if already run today
     if (!dryRun) {
