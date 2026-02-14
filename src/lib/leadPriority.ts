@@ -47,24 +47,24 @@ export function classifySignals(triggers: any): SignalSizes {
     } else result.funding_size = "small";
   }
 
+  // C-suite — never Large, at most Medium
   const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
   if (cs) {
     const mo = cs.months_ago ?? cs.recency_months ?? null;
     if (mo !== null) {
-      if (mo <= 3) result.csuite_size = "large";
-      else if (mo <= 6) result.csuite_size = "medium";
+      if (mo <= 3) result.csuite_size = "medium";
+      else if (mo <= 6) result.csuite_size = "small";
     } else if (cs === true || (typeof cs === "object" && Object.keys(cs).length > 0)) result.csuite_size = "medium";
   }
 
   return result;
 }
 
-export function computeStars(signals: SignalSizes, reachability: number): 1 | 2 | 3 {
+export function computeStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
   const sizes = [signals.role_change_size, signals.hiring_size, signals.funding_size, signals.csuite_size].filter(Boolean) as string[];
   const largeCount = sizes.filter((s) => s === "large").length;
   const mediumCount = sizes.filter((s) => s === "medium").length;
   const smallCount = sizes.filter((s) => s === "small").length;
-  const reachReady = reachability >= 20;
 
   if (largeCount >= 1) return 3;
   if (mediumCount >= 2) return 3;
@@ -75,10 +75,11 @@ export function computeStars(signals: SignalSizes, reachability: number): 1 | 2 
 }
 
 /** Get stars from the reason object (server-computed) or fallback to client computation */
-export function getStars(reason: any, triggers: any): 1 | 2 | 3 {
+export function getStars(reason: any, triggers: any, contacts?: any[]): 1 | 2 | 3 {
   if (reason?.stars) return reason.stars as 1 | 2 | 3;
   const signals = reason?.signals ?? classifySignals(triggers);
-  return computeStars(signals, reason?.reachability ?? 0);
+  const reachReady = contacts ? contacts.some((c: any) => c.email || c.phone) : (reason?.reachability ?? 0) >= 12;
+  return computeStars(signals, reachReady);
 }
 
 export function starsDisplay(stars: 1 | 2 | 3): string {
