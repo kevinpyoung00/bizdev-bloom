@@ -32,9 +32,9 @@ export function useGenerateDrip() {
 
       // Auto-insert "Further reading" for weeks 2–12 email if not already present
       if (channel === 'email' && week >= 2 && result.body && !result.body.includes('Further reading:')) {
-        const content = getContentForWeek(week, leadData.industry_key);
-        if (content) {
-          result.body = result.body.trimEnd() + '\n\n' + formatFurtherReading(content);
+        const items = getContentForWeek(week, leadData.industry_key, leadData.persona, 2);
+        if (items.length > 0) {
+          result.body = result.body.trimEnd() + '\n\n' + formatFurtherReading(items);
         }
       }
 
