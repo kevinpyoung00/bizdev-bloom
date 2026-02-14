@@ -7,9 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAccountContacts, useUpdateDisposition } from '@/hooks/useLeadEngine';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
-import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertTriangle, ShieldX } from 'lucide-react';
+import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertTriangle, ShieldX, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { getStars, starsDisplay, starsColor, starsLabel, signalDetails, getActionOrder } from '@/lib/leadPriority';
 
 interface AccountDrawerProps {
   lead: LeadWithAccount | null;
@@ -40,37 +41,6 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
   );
 }
 
-function DispositionBadge({ disposition }: { disposition: string }) {
-  if (disposition === 'active') return null;
-  const isRejected = disposition.startsWith('rejected_');
-  const isSuppressed = disposition === 'suppressed';
-  const variant = isRejected || isSuppressed ? 'destructive' : 'secondary';
-  const icon = isSuppressed ? <ShieldX size={12} /> : isRejected ? <AlertTriangle size={12} /> : null;
-  const label = DISPOSITION_OPTIONS.find((o) => o.value === disposition)?.label || disposition;
-  return (
-    <Badge variant={variant as any} className="text-[10px] gap-1">
-      {icon} {label}
-    </Badge>
-  );
-}
-
-function getTopTrigger(triggers: any): string {
-  if (!triggers) return '—';
-  if (triggers.open_roles_60d >= 10) return `Hiring: ${triggers.open_roles_60d} roles`;
-  if (triggers.c_suite_changes) return 'C-Suite Change';
-  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
-  if (rc) {
-    const items = Array.isArray(rc) ? rc : [rc];
-    const recent = items.find((i: any) => (i.days_ago ?? 999) <= 14);
-    if (recent) return `New Role: ${recent.title || 'HR/Benefits'}`;
-  }
-  if (triggers.funding) return 'Funding/Expansion';
-  if (triggers.open_roles_60d > 0) return `Hiring: ${triggers.open_roles_60d} roles`;
-  return '—';
-}
-
-export { getTopTrigger };
-
 export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawerProps) {
   const { data: contacts = [] } = useAccountContacts(lead?.account?.id || null);
   const generateBrief = useGenerateBrief();
@@ -84,21 +54,19 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   if (!lead) return null;
   const { account, score, reason, priority_rank } = lead;
   const r = reason || {};
-  const disposition = (account as any).disposition || 'active';
+  const disposition = account.disposition || 'active';
+  const stars = getStars(r, account.triggers);
+  const signals = signalDetails(account.triggers);
+  const actionOrder = getActionOrder(account.triggers);
 
-  // Check for recent role change badge
-  const triggers = account.triggers || {};
-  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
-  const hasRecentRole = rc && (Array.isArray(rc) ? rc : [rc]).some((i: any) => (i.days_ago ?? 999) <= 14);
+  const isBlocked = !!r.guardrail;
 
   const handleGenerateBrief = async () => {
     try {
       const result = await generateBrief.mutateAsync(account.id);
       setBriefMarkdown(result.brief);
       toast.success('Account brief generated!');
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to generate brief');
-    }
+    } catch (e: any) { toast.error(e.message || 'Failed to generate brief'); }
   };
 
   const handleGenerateEmail = async (persona: 'CFO' | 'HR') => {
@@ -106,9 +74,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
       const result = await generateEmail.mutateAsync({ accountId: account.id, persona });
       setEmailDraft({ subject: result.subject, body: result.body, persona });
       toast.success(`${persona} email drafted!`);
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to generate email');
-    }
+    } catch (e: any) { toast.error(e.message || 'Failed to generate email'); }
   };
 
   const copyText = (text: string, field: string) => {
@@ -118,24 +84,88 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
     setTimeout(() => setCopiedField(null), 2000);
   };
 
+  // Build action buttons in signal-driven order
+  const actionButtons = actionOrder.map((action) => {
+    switch (action) {
+      case 'push': return <Button key="push" size="sm"><Send size={14} className="mr-1" /> Claim & Push</Button>;
+      case 'hr': return (
+        <Button key="hr" size="sm" variant="outline" onClick={() => handleGenerateEmail('HR')} disabled={generateEmail.isPending}>
+          {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />} HR Draft
+        </Button>
+      );
+      case 'cfo': return (
+        <Button key="cfo" size="sm" variant="outline" onClick={() => handleGenerateEmail('CFO')} disabled={generateEmail.isPending}>
+          {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />} CFO Draft
+        </Button>
+      );
+      case 'growth': return (
+        <Button key="growth" size="sm" variant="outline" onClick={() => handleGenerateEmail('HR')} disabled={generateEmail.isPending}>
+          {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />} Growth Email
+        </Button>
+      );
+      case 'brief': return (
+        <Button key="brief" size="sm" variant="outline" onClick={handleGenerateBrief} disabled={generateBrief.isPending}>
+          {generateBrief.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />} Brief
+        </Button>
+      );
+      case 'export': return (
+        <Button key="export" size="sm" variant="outline" onClick={() => {
+          const rows = contacts.map((c: any) => ({
+            'First Name': c.first_name, 'Last Name': c.last_name,
+            Title: c.title || '', Email: c.email || '', Phone: c.phone || '',
+            LinkedIn: c.linkedin_url || '', Company: account.name, Domain: account.domain || '',
+          }));
+          if (rows.length === 0) { toast.info('No contacts to export'); return; }
+          const ws = XLSX.utils.json_to_sheet(rows);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+          XLSX.writeFile(wb, `${(account.domain || account.name).replace(/\W/g, '-')}-contacts.csv`);
+          toast.success(`Exported ${rows.length} contacts`);
+        }}><Download size={14} className="mr-1" /> Export CSV</Button>
+      );
+      default: return null;
+    }
+  });
+
   return (
     <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setEmailDraft(null); } }}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{account.name}</span>
-            <Badge variant="outline" className="text-primary font-bold text-sm">{score}</Badge>
+            <span className={`text-lg ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>
             <Badge variant="secondary">#{priority_rank}</Badge>
-            <DispositionBadge disposition={disposition} />
-            {hasRecentRole && (
-              <Badge className="bg-hot/15 text-hot text-[10px] gap-1">
-                <AlertTriangle size={10} /> New Role ≤14d
-              </Badge>
-            )}
           </SheetTitle>
         </SheetHeader>
 
         <div className="space-y-6 mt-6">
+          {/* Guardrail banner */}
+          {isBlocked && (
+            <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+              <AlertCircle size={16} className="text-destructive shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-destructive">Score blocked by guardrail</p>
+                <p className="text-xs text-destructive/80">{r.guardrail?.replace(/_/g, ' ')}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Stars + Signals */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Signals</h3>
+            {signals.length > 0 ? (
+              <ul className="space-y-1">
+                {signals.map((s, i) => (
+                  <li key={i} className="text-sm text-foreground">{s}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No timing signals detected.</p>
+            )}
+          </div>
+
+          <Separator />
+
           {/* Firmographics */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Firmographics</h3>
@@ -160,32 +190,12 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           {/* Disposition */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-2">Disposition</h3>
-            <Select
-              value={disposition}
-              onValueChange={(val) => updateDisposition.mutate({ accountId: account.id, disposition: val })}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
+            <Select value={disposition} onValueChange={(val) => updateDisposition.mutate({ accountId: account.id, disposition: val })}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {DISPOSITION_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
+                {DISPOSITION_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-
-          <Separator />
-
-          {/* Triggers */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Triggers</h3>
-            <p className="text-sm text-foreground">{getTopTrigger(account.triggers)}</p>
-            {account.triggers && typeof account.triggers === 'object' && (
-              <pre className="mt-2 text-xs bg-secondary p-2 rounded-md overflow-x-auto text-muted-foreground">
-                {JSON.stringify(account.triggers, null, 2)}
-              </pre>
-            )}
           </div>
 
           <Separator />
@@ -193,9 +203,6 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           {/* Priority Outreach Breakdown */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Priority Outreach Breakdown</h3>
-            {r.guardrail && (
-              <p className="text-xs text-destructive mb-2">⚠ Guardrail active: {r.guardrail}</p>
-            )}
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Fit (0–40)</p>
               <ScoreBar label="Industry" value={r.industry ?? 0} max={20} />
@@ -210,9 +217,19 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               <Separator className="my-2" />
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Raw / Normalized</span>
-                <span className="font-bold text-foreground">{r.raw ?? 0} / 110 → {r.normalized ?? 0}</span>
+                <span className="font-bold text-foreground">{r.raw ?? 0} / 110 → {r.normalized ?? score}</span>
               </div>
             </div>
+          </div>
+
+          <Separator />
+
+          {/* Reasons JSON */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Reasons (raw)</h3>
+            <pre className="text-xs bg-secondary p-2 rounded-md overflow-x-auto text-muted-foreground max-h-40 overflow-y-auto">
+              {JSON.stringify(r, null, 2)}
+            </pre>
           </div>
 
           <Separator />
@@ -233,21 +250,9 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     </div>
                     <p className="text-xs text-muted-foreground">{c.title || '—'} • {c.department || '—'}</p>
                     <div className="flex gap-3 mt-2">
-                      {c.email && (
-                        <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline">
-                          <Mail size={12} /> {c.email}
-                        </a>
-                      )}
-                      {c.phone && (
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Phone size={12} /> {c.phone}
-                        </span>
-                      )}
-                      {c.linkedin_url && (
-                        <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline">
-                          <Linkedin size={12} /> LinkedIn
-                        </a>
-                      )}
+                      {c.email && <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline"><Mail size={12} /> {c.email}</a>}
+                      {c.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {c.phone}</span>}
+                      {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline"><Linkedin size={12} /> LinkedIn</a>}
                     </div>
                   </div>
                 ))}
@@ -265,37 +270,10 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* AI Actions */}
+          {/* Actions (signal-ordered) */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">AI Actions</h3>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={handleGenerateBrief} disabled={generateBrief.isPending}>
-                {generateBrief.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />}
-                Generate Brief
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => handleGenerateEmail('CFO')} disabled={generateEmail.isPending}>
-                {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />}
-                CFO Email
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => handleGenerateEmail('HR')} disabled={generateEmail.isPending}>
-                {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />}
-                HR Email
-              </Button>
-              <Button size="sm"><Send size={14} className="mr-1" /> Push to CRM</Button>
-              <Button size="sm" variant="outline" onClick={() => {
-                const rows = contacts.map((c: any) => ({
-                  'First Name': c.first_name, 'Last Name': c.last_name,
-                  Title: c.title || '', Email: c.email || '', Phone: c.phone || '',
-                  LinkedIn: c.linkedin_url || '', Company: account.name, Domain: account.domain || '',
-                }));
-                if (rows.length === 0) { toast.info('No contacts to export'); return; }
-                const ws = XLSX.utils.json_to_sheet(rows);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
-                XLSX.writeFile(wb, `${(account.domain || account.name).replace(/\W/g, '-')}-contacts.csv`);
-                toast.success(`Exported ${rows.length} contacts`);
-              }}><Download size={14} className="mr-1" /> Export CSV</Button>
-            </div>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Actions</h3>
+            <div className="flex flex-wrap gap-2">{actionButtons}</div>
           </div>
 
           {/* Generated Brief */}
@@ -309,9 +287,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     {copiedField === 'brief' ? <Check size={14} className="text-primary" /> : <Copy size={14} />}
                   </Button>
                 </div>
-                <div className="bg-secondary/50 rounded-lg p-4 text-sm text-foreground prose prose-sm max-w-none whitespace-pre-wrap">
-                  {briefMarkdown}
-                </div>
+                <div className="bg-secondary/50 rounded-lg p-4 text-sm text-foreground prose prose-sm max-w-none whitespace-pre-wrap">{briefMarkdown}</div>
               </div>
             </>
           )}
