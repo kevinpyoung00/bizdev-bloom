@@ -127,10 +127,6 @@ export function useRunScoring() {
   return useMutation({
     mutationFn: async (dryRun: boolean) => {
       const runDate = new Date().toISOString().split('T')[0];
-      // Delete existing queue for today so re-runs work
-      if (!dryRun) {
-        await supabase.from('lead_queue').delete().eq('run_date', runDate);
-      }
       const { data, error } = await supabase.functions.invoke('score-leads', {
         body: { dry_run: dryRun, run_date: runDate },
       });

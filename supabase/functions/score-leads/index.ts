@@ -378,11 +378,8 @@ Deno.serve(async (req) => {
     }
 
     if (!dryRun) {
-      const { data: existing } = await supabase.from("lead_queue").select("id").eq("run_date", runDate).limit(1);
-      if (existing && existing.length > 0) {
-        return new Response(JSON.stringify({ success: false, message: `Lead queue already generated for ${runDate}. Use dry_run=true to preview or delete existing rows first.` }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 });
-      }
+      // Delete any existing queue for this date so re-runs work
+      await supabase.from("lead_queue").delete().eq("run_date", runDate);
     }
 
     const { data: accounts, error: accountsErr } = await supabase.from("accounts").select("*");
