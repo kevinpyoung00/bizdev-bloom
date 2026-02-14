@@ -9,6 +9,11 @@ export interface LeadWithAccount {
   reason: any;
   status: string | null;
   run_date: string;
+  claim_status: string;
+  claimed_at: string | null;
+  persona: string | null;
+  industry_key: string | null;
+  reject_reason: string | null;
   account: {
     id: string;
     name: string;
@@ -46,6 +51,11 @@ export function useLeadQueue(runDate?: string) {
         reason: row.reason,
         status: row.status,
         run_date: row.run_date,
+        claim_status: row.claim_status || 'new',
+        claimed_at: row.claimed_at,
+        persona: row.persona,
+        industry_key: row.industry_key,
+        reject_reason: row.reject_reason,
         account: row.accounts,
       })) as LeadWithAccount[];
     },

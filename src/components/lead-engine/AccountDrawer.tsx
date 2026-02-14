@@ -5,15 +5,20 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAccountContacts, useUpdateDisposition } from '@/hooks/useLeadEngine';
+import { useClaimLead, useRejectLead, useStartCampaign, REJECT_REASONS } from '@/hooks/useLeadActions';
+import { useGenerateDrip } from '@/hooks/useGenerateDrip';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
-import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
-import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertCircle } from 'lucide-react';
+import { useGenerateBrief } from '@/hooks/useAIGeneration';
+import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play } from 'lucide-react';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
+import DripWeekPanel from '@/components/lead-engine/DripWeekPanel';
 import {
   getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
-  getPriorityLabel, priorityBadgeColor, signalDetails, getActionOrder, classifySignals
+  getPriorityLabel, priorityBadgeColor, signalDetails, classifySignals
 } from '@/lib/leadPriority';
+import { detectPersona, PERSONA_LABELS, type PersonaTrack } from '@/lib/persona';
+import { matchIndustryKey, getIndustryLabel } from '@/lib/industry';
 
 interface AccountDrawerProps {
   lead: LeadWithAccount | null;
@@ -21,46 +26,40 @@ interface AccountDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const DISPOSITION_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'needs_review', label: 'Needs Review' },
-  { value: 'rejected_existing_client', label: 'Rejected – Existing Client' },
-  { value: 'rejected_owned_by_other_rep', label: 'Rejected – Owned by Other Rep' },
-  { value: 'rejected_bad_fit', label: 'Rejected – Bad Fit' },
-  { value: 'rejected_no_opportunity', label: 'Rejected – No Opportunity' },
-  { value: 'suppressed', label: 'Suppressed' },
-];
-
-function TriggerChip({ label, active }: { label: string; active: boolean }) {
-  return (
-    <Badge variant={active ? 'default' : 'outline'} className={`text-xs ${!active ? 'opacity-40' : ''}`}>
-      {label}
-    </Badge>
-  );
-}
-
 export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawerProps) {
   const { data: contacts = [] } = useAccountContacts(lead?.account?.id || null);
   const generateBrief = useGenerateBrief();
-  const generateEmail = useGenerateEmail();
   const updateDisposition = useUpdateDisposition();
+  const claimLead = useClaimLead();
+  const rejectLead = useRejectLead();
+  const startCampaign = useStartCampaign();
+  const generateDrip = useGenerateDrip();
 
   const [briefMarkdown, setBriefMarkdown] = useState<string | null>(null);
-  const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string; persona: string } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [personaOverride, setPersonaOverride] = useState<PersonaTrack | null>(null);
+  const [showDrip, setShowDrip] = useState(false);
+  const [generatingChannel, setGeneratingChannel] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState<string | null>(null);
 
   if (!lead) return null;
   const { account, reason, priority_rank } = lead;
   const rawReason = reason || {};
+  const claimStatus = (lead as any).claim_status || 'new';
 
   const signalStars = getSignalStars(rawReason, account.triggers, contacts);
   const reachStars = computeReachStars(contacts, rawReason);
   const priority = getPriorityLabel(signalStars);
   const signals = signalDetails(account.triggers);
-  const actionOrder = getActionOrder(account.triggers);
   const guardrail = rawReason.guardrail ?? null;
   const isBlocked = !!guardrail;
-  const disposition = account.disposition || 'active';
+
+  // Persona detection
+  const primaryContact = contacts.find((c: any) => c.is_primary) || contacts[0];
+  const autoPersona = detectPersona(primaryContact?.title);
+  const persona = personaOverride || (lead as any).persona || autoPersona;
+  const industryKey = (lead as any).industry_key || matchIndustryKey(account.industry);
+  const industryLabel = getIndustryLabel(industryKey);
 
   // Trigger detection for chips
   const triggersFired = rawReason.triggers_fired ?? { hiring: false, role_change: false, funding: false, csuite: false };
@@ -70,20 +69,61 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const hasPhone = (rawReason.contact_phone ?? 0) > 0 || contacts.some((c: any) => c.phone);
   const hasLinkedIn = (rawReason.contact_linkedin ?? 0) > 0 || contacts.some((c: any) => c.linkedin_url);
 
-  const handleGenerateBrief = async () => {
-    try {
-      const result = await generateBrief.mutateAsync(account.id);
-      setBriefMarkdown(result.brief);
-      toast.success('Account brief generated!');
-    } catch (e: any) { toast.error(e.message || 'Failed to generate brief'); }
+  // Build lead data for drip generation
+  const buildLeadData = () => {
+    const triggers = account.triggers || {};
+    return {
+      lead_queue_id: lead.id,
+      company_name: account.name,
+      industry_key: industryKey,
+      industry_label: industryLabel,
+      hq_city: account.hq_city,
+      hq_state: account.hq_state,
+      employee_count: account.employee_count,
+      persona,
+      signals: {
+        funding: triggers.funding || triggers.expansion ? { stage: triggers.funding?.stage, days_ago: (triggers.funding?.months_ago || 12) * 30 } : undefined,
+        hiring: triggers.open_roles_60d || triggers.hiring_velocity ? { jobs_60d: triggers.open_roles_60d || triggers.hiring_velocity, intensity: classifySignals(triggers).hiring_size } : undefined,
+        hr_change: triggers.recent_role_changes ? { title: Array.isArray(triggers.recent_role_changes) ? triggers.recent_role_changes[0]?.title : triggers.recent_role_changes?.title, days_ago: Array.isArray(triggers.recent_role_changes) ? triggers.recent_role_changes[0]?.days_ago : triggers.recent_role_changes?.days_ago } : undefined,
+        csuite: triggers.c_suite_changes ? { role: triggers.c_suite_changes?.title || triggers.c_suite_changes?.role, days_ago: (triggers.c_suite_changes?.months_ago || 6) * 30 } : undefined,
+      },
+      contact: primaryContact ? { first_name: primaryContact.first_name } : undefined,
+      reach: { email: hasEmail, phone: hasPhone, linkedin: hasLinkedIn },
+    };
   };
 
-  const handleGenerateEmail = async (persona: 'CFO' | 'HR') => {
+  const handleGenerate = async (week: number, channel: string) => {
+    setGeneratingChannel(channel);
     try {
-      const result = await generateEmail.mutateAsync({ accountId: account.id, persona });
-      setEmailDraft({ subject: result.subject, body: result.body, persona });
-      toast.success(`${persona} email drafted!`);
-    } catch (e: any) { toast.error(e.message || 'Failed to generate email'); }
+      const result = await generateDrip.mutateAsync({
+        week,
+        channel,
+        leadData: buildLeadData(),
+        accountId: account.id,
+        contactId: primaryContact?.id,
+      });
+      return result;
+    } finally {
+      setGeneratingChannel(null);
+    }
+  };
+
+  const handleClaim = () => {
+    claimLead.mutate({
+      leadId: lead.id,
+      contactTitle: primaryContact?.title,
+      accountIndustry: account.industry || undefined,
+    });
+  };
+
+  const handleReject = (reason: string) => {
+    rejectLead.mutate({ leadId: lead.id, reason });
+    setRejectReason(null);
+  };
+
+  const handleStartCampaign = () => {
+    startCampaign.mutate([lead.id]);
+    setShowDrip(true);
   };
 
   const copyText = (text: string, field: string) => {
@@ -93,55 +133,16 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const actionButtons = actionOrder.map((action) => {
-    switch (action) {
-      case 'push': return <Button key="push" size="sm"><Send size={14} className="mr-1" /> Claim & Push</Button>;
-      case 'hr': return (
-        <Button key="hr" size="sm" variant="outline" onClick={() => handleGenerateEmail('HR')} disabled={generateEmail.isPending}>
-          {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />} HR Draft
-        </Button>
-      );
-      case 'cfo': return (
-        <Button key="cfo" size="sm" variant="outline" onClick={() => handleGenerateEmail('CFO')} disabled={generateEmail.isPending}>
-          {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />} CFO Draft
-        </Button>
-      );
-      case 'growth': return (
-        <Button key="growth" size="sm" variant="outline" onClick={() => handleGenerateEmail('HR')} disabled={generateEmail.isPending}>
-          {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />} Growth Email
-        </Button>
-      );
-      case 'brief': return (
-        <Button key="brief" size="sm" variant="outline" onClick={handleGenerateBrief} disabled={generateBrief.isPending}>
-          {generateBrief.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />} Brief
-        </Button>
-      );
-      case 'export': return (
-        <Button key="export" size="sm" variant="outline" onClick={() => {
-          const rows = contacts.map((c: any) => ({
-            'First Name': c.first_name, 'Last Name': c.last_name,
-            Title: c.title || '', Email: c.email || '', Phone: c.phone || '',
-            LinkedIn: c.linkedin_url || '', Company: account.name, Domain: account.domain || '',
-          }));
-          if (rows.length === 0) { toast.info('No contacts to export'); return; }
-          const ws = XLSX.utils.json_to_sheet(rows);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
-          XLSX.writeFile(wb, `${(account.domain || account.name).replace(/\W/g, '-')}-contacts.csv`);
-          toast.success(`Exported ${rows.length} contacts`);
-        }}><Download size={14} className="mr-1" /> Export CSV</Button>
-      );
-      default: return null;
-    }
-  });
+  const isLocked = claimStatus !== 'uploaded' && claimStatus !== 'in_campaign';
 
   return (
-    <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setEmailDraft(null); } }}>
+    <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setShowDrip(false); setPersonaOverride(null); } }}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{account.name}</span>
             <Badge variant="secondary">#{priority_rank}</Badge>
+            <LeadStatusBadge status={claimStatus} />
           </SheetTitle>
         </SheetHeader>
 
@@ -161,15 +162,11 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground w-16">Signals</span>
-                <span className="text-xl font-bold tracking-wide" style={{ color: '#FFA500' }}>
-                  {signalStarsDisplay(signalStars)}
-                </span>
+                <span className="text-xl font-bold tracking-wide" style={{ color: '#FFA500' }}>{signalStarsDisplay(signalStars)}</span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground w-16">Reach</span>
-                <span className="text-xl font-bold tracking-wide" style={{ color: '#1E90FF' }}>
-                  {reachStarsDisplay(reachStars)}
-                </span>
+                <span className="text-xl font-bold tracking-wide" style={{ color: '#1E90FF' }}>{reachStarsDisplay(reachStars)}</span>
               </div>
               <Badge variant="outline" className={`w-fit text-xs mt-1 ${priorityBadgeColor(priority)}`}>
                 {priority.toUpperCase()} PRIORITY
@@ -177,21 +174,44 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             </div>
           </div>
 
+          {/* Persona + Industry */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <span className="text-xs text-muted-foreground">Persona: </span>
+              <Select value={persona} onValueChange={(v) => setPersonaOverride(v as PersonaTrack)}>
+                <SelectTrigger className="h-7 w-40 text-xs inline-flex">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PERSONA_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k} className="text-xs">{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!personaOverride && <span className="text-[10px] text-muted-foreground ml-1">(Auto)</span>}
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Industry: </span>
+              <Badge variant="outline" className="text-xs">{industryLabel}</Badge>
+            </div>
+          </div>
+
           {/* Signal Details */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-2">Signal Breakdown</h3>
             <div className="flex flex-wrap gap-1.5 mb-3">
-              <TriggerChip label="Hiring" active={triggersFired.hiring} />
-              <TriggerChip label="HR Role Change" active={triggersFired.role_change} />
-              <TriggerChip label="Funding" active={triggersFired.funding} />
-              <TriggerChip label="C-Suite" active={triggersFired.csuite} />
+              {['Hiring', 'HR Role Change', 'Funding', 'C-Suite'].map(label => {
+                const key = label === 'HR Role Change' ? 'role_change' : label.toLowerCase().replace('-', '');
+                const active = triggersFired[key as keyof typeof triggersFired];
+                return (
+                  <Badge key={label} variant={active ? 'default' : 'outline'} className={`text-xs ${!active ? 'opacity-40' : ''}`}>
+                    {label}
+                  </Badge>
+                );
+              })}
             </div>
             {signals.length > 0 ? (
-              <ul className="space-y-1">
-                {signals.map((s, i) => (
-                  <li key={i} className="text-sm text-foreground">{s}</li>
-                ))}
-              </ul>
+              <ul className="space-y-1">{signals.map((s, i) => <li key={i} className="text-sm text-foreground">{s}</li>)}</ul>
             ) : (
               <p className="text-sm text-muted-foreground">No timing signals detected.</p>
             )}
@@ -199,19 +219,15 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* Reachability Breakdown */}
+          {/* Reachability */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Reachability Breakdown</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Reachability</h3>
             <div className="flex flex-wrap gap-4">
-              <div className={`flex items-center gap-1.5 text-xs ${hasEmail ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={hasEmail ? { color: '#1E90FF' } : {}}>
-                <Mail size={12} /> Email {hasEmail ? '✓' : '✗'}
-              </div>
-              <div className={`flex items-center gap-1.5 text-xs ${hasPhone ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={hasPhone ? { color: '#1E90FF' } : {}}>
-                <Phone size={12} /> Phone {hasPhone ? '✓' : '✗'}
-              </div>
-              <div className={`flex items-center gap-1.5 text-xs ${hasLinkedIn ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={hasLinkedIn ? { color: '#1E90FF' } : {}}>
-                <Linkedin size={12} /> LinkedIn {hasLinkedIn ? '✓' : '✗'}
-              </div>
+              {[{ icon: Mail, label: 'Email', has: hasEmail }, { icon: Phone, label: 'Phone', has: hasPhone }, { icon: Linkedin, label: 'LinkedIn', has: hasLinkedIn }].map(({ icon: Icon, label, has }) => (
+                <div key={label} className={`flex items-center gap-1.5 text-xs ${has ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={has ? { color: '#1E90FF' } : {}}>
+                  <Icon size={12} /> {label} {has ? '✓' : '✗'}
+                </div>
+              ))}
             </div>
           </div>
 
@@ -238,19 +254,6 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* Disposition */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Disposition</h3>
-            <Select value={disposition} onValueChange={(val) => updateDisposition.mutate({ accountId: account.id, disposition: val })}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {DISPOSITION_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Separator />
-
           {/* Contacts */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Contacts ({contacts.length})</h3>
@@ -263,9 +266,10 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     <div className="flex items-center gap-2 mb-1">
                       <User size={14} className="text-muted-foreground" />
                       <span className="text-sm font-medium text-foreground">{c.first_name} {c.last_name}</span>
-                      {c.is_primary && <Badge className="text-[10px] px-1.5 py-0">Best Fit</Badge>}
+                      {c.is_primary && <Badge className="text-[10px] px-1.5 py-0">Primary</Badge>}
+                      <Badge variant="outline" className="text-[9px]">{PERSONA_LABELS[detectPersona(c.title)] || 'General'}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground">{c.title || '—'} • {c.department || '—'}</p>
+                    <p className="text-xs text-muted-foreground">{c.title || '—'}</p>
                     <div className="flex gap-3 mt-2">
                       {c.email && <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline"><Mail size={12} /> {c.email}</a>}
                       {c.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {c.phone}</span>}
@@ -279,21 +283,49 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* Notes */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Notes</h3>
-            <p className="text-sm text-muted-foreground">{account.notes || 'No notes.'}</p>
-          </div>
-
-          <Separator />
-
           {/* Actions */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Actions</h3>
-            <div className="flex flex-wrap gap-2">{actionButtons}</div>
+            <div className="flex flex-wrap gap-2">
+              {claimStatus === 'new' && (
+                <>
+                  <Button size="sm" onClick={handleClaim} disabled={claimLead.isPending}>
+                    {claimLead.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
+                    Claim
+                  </Button>
+                  {rejectReason === null ? (
+                    <Button size="sm" variant="destructive" onClick={() => setRejectReason('')}>Reject</Button>
+                  ) : (
+                    <Select onValueChange={handleReject}>
+                      <SelectTrigger className="h-8 w-48 text-xs">
+                        <SelectValue placeholder="Select reason..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REJECT_REASONS.map(r => <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </>
+              )}
+              {claimStatus === 'uploaded' && (
+                <Button size="sm" onClick={handleStartCampaign} disabled={startCampaign.isPending}>
+                  <Play size={14} className="mr-1" /> Start Campaign
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={async () => {
+                try {
+                  const result = await generateBrief.mutateAsync(account.id);
+                  setBriefMarkdown(result.brief);
+                  toast.success('Brief generated!');
+                } catch (e: any) { toast.error(e.message); }
+              }} disabled={generateBrief.isPending}>
+                {generateBrief.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />}
+                Brief
+              </Button>
+            </div>
           </div>
 
-          {/* Generated Brief */}
+          {/* Brief */}
           {briefMarkdown && (
             <>
               <Separator />
@@ -309,20 +341,26 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             </>
           )}
 
-          {/* Generated Email Draft */}
-          {emailDraft && (
+          {/* Drip Weeks */}
+          {(claimStatus === 'uploaded' || claimStatus === 'in_campaign' || showDrip) && (
             <>
               <Separator />
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-foreground">{emailDraft.persona} Email Draft</h3>
-                  <Button size="sm" variant="ghost" className="h-7" onClick={() => copyText(`Subject: ${emailDraft.subject}\n\n${emailDraft.body}`, 'email')}>
-                    {copiedField === 'email' ? <Check size={14} className="text-primary" /> : <Copy size={14} />}
-                  </Button>
-                </div>
-                <div className="bg-secondary/50 rounded-lg p-4 space-y-2">
-                  <p className="text-sm font-medium text-foreground">Subject: {emailDraft.subject}</p>
-                  <pre className="text-sm text-foreground whitespace-pre-wrap font-sans leading-relaxed">{emailDraft.body}</pre>
+                <h3 className="text-sm font-semibold text-foreground mb-3">12-Week Drip Cadence</h3>
+                <div className="space-y-3">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(week => (
+                    <DripWeekPanel
+                      key={week}
+                      week={week}
+                      persona={persona}
+                      industryKey={industryKey}
+                      leadData={buildLeadData()}
+                      onGenerate={handleGenerate}
+                      isGenerating={generateDrip.isPending}
+                      generatingChannel={generatingChannel}
+                      locked={isLocked}
+                    />
+                  ))}
                 </div>
               </div>
             </>

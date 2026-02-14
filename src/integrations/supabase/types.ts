@@ -451,13 +451,48 @@ export type Database = {
         }
         Relationships: []
       }
+      industry_settings: {
+        Row: {
+          active: boolean
+          created_at: string
+          display_name: string
+          id: string
+          key: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          display_name: string
+          id?: string
+          key: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          display_name?: string
+          id?: string
+          key?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       lead_queue: {
         Row: {
           account_id: string | null
+          claim_status: string
+          claimed_at: string | null
           created_at: string
           id: string
+          industry_key: string | null
+          persona: string | null
           priority_rank: number
           reason: Json | null
+          reject_reason: string | null
           run_date: string
           score: number
           status: string | null
@@ -465,10 +500,15 @@ export type Database = {
         }
         Insert: {
           account_id?: string | null
+          claim_status?: string
+          claimed_at?: string | null
           created_at?: string
           id?: string
+          industry_key?: string | null
+          persona?: string | null
           priority_rank: number
           reason?: Json | null
+          reject_reason?: string | null
           run_date?: string
           score?: number
           status?: string | null
@@ -476,10 +516,15 @@ export type Database = {
         }
         Update: {
           account_id?: string | null
+          claim_status?: string
+          claimed_at?: string | null
           created_at?: string
           id?: string
+          industry_key?: string | null
+          persona?: string | null
           priority_rank?: number
           reason?: Json | null
+          reject_reason?: string | null
           run_date?: string
           score?: number
           status?: string | null
@@ -491,6 +536,73 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_snapshots: {
+        Row: {
+          account_id: string | null
+          body: string
+          channel: string
+          contact_id: string | null
+          created_at: string
+          id: string
+          industry_key: string | null
+          lead_queue_id: string | null
+          persona: string | null
+          subject: string | null
+          tokens_used: Json | null
+          week_number: number
+        }
+        Insert: {
+          account_id?: string | null
+          body: string
+          channel: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          industry_key?: string | null
+          lead_queue_id?: string | null
+          persona?: string | null
+          subject?: string | null
+          tokens_used?: Json | null
+          week_number: number
+        }
+        Update: {
+          account_id?: string | null
+          body?: string
+          channel?: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          industry_key?: string | null
+          lead_queue_id?: string | null
+          persona?: string | null
+          subject?: string | null
+          tokens_used?: Json | null
+          week_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_snapshots_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_snapshots_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_le"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_snapshots_lead_queue_id_fkey"
+            columns: ["lead_queue_id"]
+            isOneToOne: false
+            referencedRelation: "lead_queue"
             referencedColumns: ["id"]
           },
         ]

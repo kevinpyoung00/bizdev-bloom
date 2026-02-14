@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, CalendarCheck, Columns3, Megaphone, FileText,
+  LayoutDashboard, Users, CalendarCheck, Columns3, Megaphone,
   ChevronLeft, ChevronRight, Target, Handshake, Database, Settings
 } from 'lucide-react';
 import { useState } from 'react';
@@ -13,7 +13,6 @@ const navItems = [
   { to: '/contacts', icon: Users, label: 'Contacts' },
   { to: '/pipeline', icon: Columns3, label: 'Pipeline' },
   { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
-  { to: '/templates', icon: FileText, label: 'Templates' },
   { to: '/leads', icon: Target, label: 'Lead Engine', divider: true },
   { to: '/lead-queue', icon: Target, label: 'Lead Queue' },
   { to: '/coi-queue', icon: Handshake, label: 'COI Queue' },
