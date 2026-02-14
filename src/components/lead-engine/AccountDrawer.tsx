@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useAccountContacts } from '@/hooks/useLeadEngine';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
-import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User } from 'lucide-react';
+import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
+import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface AccountDrawerProps {
   lead: LeadWithAccount | null;
@@ -38,13 +41,46 @@ export { getTopTrigger };
 
 export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawerProps) {
   const { data: contacts = [] } = useAccountContacts(lead?.account?.id || null);
-  if (!lead) return null;
+  const generateBrief = useGenerateBrief();
+  const generateEmail = useGenerateEmail();
 
+  const [briefMarkdown, setBriefMarkdown] = useState<string | null>(null);
+  const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string; persona: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  if (!lead) return null;
   const { account, score, reason, priority_rank } = lead;
   const r = reason || {};
 
+  const handleGenerateBrief = async () => {
+    try {
+      const result = await generateBrief.mutateAsync(account.id);
+      setBriefMarkdown(result.brief);
+      toast.success('Account brief generated!');
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to generate brief');
+    }
+  };
+
+  const handleGenerateEmail = async (persona: 'CFO' | 'HR') => {
+    try {
+      const result = await generateEmail.mutateAsync({ accountId: account.id, persona });
+      setEmailDraft({ subject: result.subject, body: result.body, persona });
+      toast.success(`${persona} email drafted!`);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to generate email');
+    }
+  };
+
+  const copyText = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    toast.success('Copied!');
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setEmailDraft(null); } }}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-3">
@@ -107,9 +143,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           {/* Contacts */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">
-              Contacts ({contacts.length})
-            </h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Contacts ({contacts.length})</h3>
             {contacts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No contacts imported yet.</p>
             ) : (
@@ -153,14 +187,65 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             <p className="text-sm text-muted-foreground">{account.notes || 'No notes.'}</p>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button size="sm" variant="outline"><FileText size={14} className="mr-1" /> Generate Brief</Button>
-            <Button size="sm" variant="outline"><Mail size={14} className="mr-1" /> CFO Email</Button>
-            <Button size="sm" variant="outline"><Mail size={14} className="mr-1" /> HR Email</Button>
-            <Button size="sm"><Send size={14} className="mr-1" /> Push to CRM</Button>
-            <Button size="sm" variant="outline"><Download size={14} className="mr-1" /> Export CSV</Button>
+          <Separator />
+
+          {/* AI Actions */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-3">AI Actions</h3>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={handleGenerateBrief} disabled={generateBrief.isPending}>
+                {generateBrief.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />}
+                Generate Brief
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleGenerateEmail('CFO')} disabled={generateEmail.isPending}>
+                {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />}
+                CFO Email
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => handleGenerateEmail('HR')} disabled={generateEmail.isPending}>
+                {generateEmail.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />}
+                HR Email
+              </Button>
+              <Button size="sm"><Send size={14} className="mr-1" /> Push to CRM</Button>
+              <Button size="sm" variant="outline"><Download size={14} className="mr-1" /> Export CSV</Button>
+            </div>
           </div>
+
+          {/* Generated Brief */}
+          {briefMarkdown && (
+            <>
+              <Separator />
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-foreground">Generated Brief</h3>
+                  <Button size="sm" variant="ghost" className="h-7" onClick={() => copyText(briefMarkdown, 'brief')}>
+                    {copiedField === 'brief' ? <Check size={14} className="text-primary" /> : <Copy size={14} />}
+                  </Button>
+                </div>
+                <div className="bg-secondary/50 rounded-lg p-4 text-sm text-foreground prose prose-sm max-w-none whitespace-pre-wrap">
+                  {briefMarkdown}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Generated Email Draft */}
+          {emailDraft && (
+            <>
+              <Separator />
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-foreground">{emailDraft.persona} Email Draft</h3>
+                  <Button size="sm" variant="ghost" className="h-7" onClick={() => copyText(`Subject: ${emailDraft.subject}\n\n${emailDraft.body}`, 'email')}>
+                    {copiedField === 'email' ? <Check size={14} className="text-primary" /> : <Copy size={14} />}
+                  </Button>
+                </div>
+                <div className="bg-secondary/50 rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-medium text-foreground">Subject: {emailDraft.subject}</p>
+                  <pre className="text-sm text-foreground whitespace-pre-wrap font-sans leading-relaxed">{emailDraft.body}</pre>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </SheetContent>
     </Sheet>
