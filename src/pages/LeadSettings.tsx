@@ -11,32 +11,30 @@ export default function LeadSettings() {
       <div className="p-6 space-y-6 max-w-4xl">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Lead Engine Settings</h1>
-          <p className="text-sm text-muted-foreground">Priority Outreach Score breakdown and geography gate configuration</p>
+          <p className="text-sm text-muted-foreground">Dual 3-star scoring model: Signal Stars + Reachability Stars + Priority Label</p>
         </div>
 
-        {/* Scoring Model Reference */}
+        {/* Signal Stars */}
         <Card>
           <CardHeader>
-            <CardTitle>Priority Outreach Score (0–100)</CardTitle>
-            <CardDescription>Raw score out of 110 is normalized to 0–100. Geography is a selection gate, not a scoring factor.</CardDescription>
+            <CardTitle>Signal Stars (1–3) — <span style={{ color: '#FFA500' }}>★★★</span></CardTitle>
+            <CardDescription>Based on timing/disruption events. Determines the Priority Label.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Fit (0–40 pts)</p>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Large Signals (auto ★★★)</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="border border-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-foreground">Industry</span>
-                    <Badge variant="outline" className="text-[10px]">0–20</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Healthcare (20), Biotech (18), Professional Services (16), Manufacturing (14), Higher Ed (12), deprioritized industries (2), unknown (5)</p>
+                  <span className="text-sm font-medium text-foreground">HR/Benefits Role Change</span>
+                  <p className="text-xs text-muted-foreground mt-1">≤14 days ago</p>
                 </div>
                 <div className="border border-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-foreground">Company Size</span>
-                    <Badge variant="outline" className="text-[10px]">0–20</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">50–250 (20), 250–500 (14), 25–50 (12), 500–1000 (6), 1000+ (2), &lt;25 (2)</p>
+                  <span className="text-sm font-medium text-foreground">Hiring Velocity</span>
+                  <p className="text-xs text-muted-foreground mt-1">10+ job postings in 60 days</p>
+                </div>
+                <div className="border border-border rounded-lg p-3">
+                  <span className="text-sm font-medium text-foreground">Funding Event</span>
+                  <p className="text-xs text-muted-foreground mt-1">≤90 days ago</p>
                 </div>
               </div>
             </div>
@@ -44,35 +42,23 @@ export default function LeadSettings() {
             <Separator />
 
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Timing (0–60 pts)</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Medium Signals</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="border border-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-foreground">Hiring Velocity</span>
-                    <Badge variant="outline" className="text-[10px]">0–25</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">10+ open roles in 60d = 25 pts, scales linearly below</p>
+                  <span className="text-sm font-medium text-foreground">HR/Benefits Role Change</span>
+                  <p className="text-xs text-muted-foreground mt-1">15–60 days ago</p>
                 </div>
                 <div className="border border-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-foreground">C-Suite Changes</span>
-                    <Badge variant="outline" className="text-[10px]">0–20</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">≤3mo (20), ≤6mo (12), ≤12mo (6)</p>
+                  <span className="text-sm font-medium text-foreground">Hiring Velocity</span>
+                  <p className="text-xs text-muted-foreground mt-1">6–9 job postings</p>
                 </div>
                 <div className="border border-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-foreground">Recent Role Changes</span>
-                    <Badge variant="outline" className="text-[10px]">0–10</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Non-C-suite HR/Finance/Benefits roles: ≤14d (10), ≤30d (7), ≤60d (4)</p>
+                  <span className="text-sm font-medium text-foreground">Funding Event</span>
+                  <p className="text-xs text-muted-foreground mt-1">91–180 days ago</p>
                 </div>
                 <div className="border border-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-foreground">Funding / Expansion</span>
-                    <Badge variant="outline" className="text-[10px]">0–5</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Recent funding: ≤3mo (5), ≤6mo (4), ≤12mo (3)</p>
+                  <span className="text-sm font-medium text-foreground">C-Suite Movement</span>
+                  <p className="text-xs text-muted-foreground mt-1">≤90 days ago (never Large)</p>
                 </div>
               </div>
             </div>
@@ -80,15 +66,49 @@ export default function LeadSettings() {
             <Separator />
 
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Reachability (0–10 pts)</p>
-              <div className="border border-border rounded-lg p-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-foreground">Contact Data Quality</span>
-                  <Badge variant="outline" className="text-[10px]">0–10</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">Email (4), Phone (2), 2+ LinkedIn (2), CFO/CHRO contact (2)</p>
-              </div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Star Logic</p>
+              <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                <li><span style={{ color: '#FFA500' }}>★★★</span> = 1 Large OR 2 Medium OR 1 Medium + Reachable (email or phone)</li>
+                <li><span style={{ color: '#FFA500' }}>★★☆</span> = 1 Medium OR 2 Small</li>
+                <li><span style={{ color: '#FFA500' }}>★☆☆</span> = 1 Small OR ICP-only</li>
+              </ul>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Reachability Stars */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Reachability Stars (0–3) — <span style={{ color: '#1E90FF' }}>★★★</span></CardTitle>
+            <CardDescription>Based on available contact channels. Does NOT affect the Priority Label.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+              <li><span style={{ color: '#1E90FF' }}>★★★</span> = Email + Phone + LinkedIn</li>
+              <li><span style={{ color: '#1E90FF' }}>★★☆</span> = Any two channels</li>
+              <li><span style={{ color: '#1E90FF' }}>★☆☆</span> = Only one channel</li>
+              <li><span style={{ color: '#1E90FF' }}>☆☆☆</span> = None</li>
+            </ul>
+          </CardContent>
+        </Card>
+
+        {/* Priority Label */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Priority Label</CardTitle>
+            <CardDescription>Derived solely from Signal Stars. Displayed as a colored badge.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3">
+              <Badge variant="outline" className="bg-orange-500/15 text-orange-600 border-orange-500/30">HIGH PRIORITY</Badge>
+              <Badge variant="outline" className="bg-yellow-500/15 text-yellow-600 border-yellow-500/30">MEDIUM PRIORITY</Badge>
+              <Badge variant="outline" className="bg-muted text-muted-foreground border-border">LOW PRIORITY</Badge>
+            </div>
+            <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside mt-3">
+              <li>High = ★★★ Signal Stars</li>
+              <li>Medium = ★★ Signal Stars</li>
+              <li>Low = ★ Signal Stars</li>
+            </ul>
           </CardContent>
         </Card>
 
@@ -96,24 +116,24 @@ export default function LeadSettings() {
         <Card>
           <CardHeader>
             <CardTitle>Geography Selection Gates</CardTitle>
-            <CardDescription>Geography determines slot allocation, not scoring. MA accounts fill first, then NE/National if they exceed score thresholds.</CardDescription>
+            <CardDescription>MA accounts fill first. NE/National require ★★★ Signal Stars.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>MA Slots</Label>
                 <Input type="number" defaultValue={45} disabled />
-                <p className="text-xs text-muted-foreground mt-1">Top 45, no minimum score</p>
+                <p className="text-xs text-muted-foreground mt-1">Top 45, no minimum</p>
               </div>
               <div>
                 <Label>NE Slots</Label>
                 <Input type="number" defaultValue={4} disabled />
-                <p className="text-xs text-muted-foreground mt-1">Up to 4 if score ≥ 85</p>
+                <p className="text-xs text-muted-foreground mt-1">Up to 4, must be ★★★</p>
               </div>
               <div>
                 <Label>National Slots</Label>
                 <Input type="number" defaultValue={1} disabled />
-                <p className="text-xs text-muted-foreground mt-1">Up to 1 if score ≥ 90</p>
+                <p className="text-xs text-muted-foreground mt-1">Up to 1, must be ★★★</p>
               </div>
             </div>
           </CardContent>
@@ -123,7 +143,7 @@ export default function LeadSettings() {
         <Card>
           <CardHeader>
             <CardTitle>Guardrails</CardTitle>
-            <CardDescription>Accounts matching these conditions are scored at 0 and excluded from the daily queue</CardDescription>
+            <CardDescription>Accounts matching these conditions are excluded from the daily queue</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">

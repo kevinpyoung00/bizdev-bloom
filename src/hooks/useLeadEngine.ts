@@ -64,14 +64,12 @@ export function useLeadStats(runDate?: string) {
         .eq('run_date', date);
 
       if (error) throw error;
-      if (!data || data.length === 0) return { total: 0, avg: 0, ma: 0, ne: 0, us: 0 };
+      if (!data || data.length === 0) return { total: 0, ma: 0, ne: 0, us: 0 };
 
-      const scores = data.map((d: any) => d.score);
       const geos = data.map((d: any) => (d.accounts as any)?.geography_bucket || 'US');
 
       return {
         total: data.length,
-        avg: Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length),
         ma: geos.filter((g: string) => g === 'MA').length,
         ne: geos.filter((g: string) => g === 'NE').length,
         us: geos.filter((g: string) => g === 'US').length,
@@ -141,7 +139,7 @@ export function useRunScoring() {
       queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
       toast({
         title: 'Scoring complete',
-        description: `${data.stats?.total || 0} leads scored. Avg: ${data.stats?.avg_score || 0}`,
+        description: `${data.stats?.total || 0} leads scored.`,
       });
     },
     onError: (err: any) => {

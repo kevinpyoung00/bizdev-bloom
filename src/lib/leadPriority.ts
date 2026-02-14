@@ -1,4 +1,4 @@
-// Star priority + signal helpers shared between queue list and drawer
+// Dual 3-star system: Signal Stars + Reachability Stars + Priority Label
 
 export type SignalSize = "large" | "medium" | "small" | null;
 
@@ -11,7 +11,6 @@ export interface SignalSizes {
 
 /**
  * Classify trigger signals into sizes for star computation.
- * Mirrors server-side logic so stars work client-side on reason.signals too.
  */
 export function classifySignals(triggers: any): SignalSizes {
   const result: SignalSizes = { role_change_size: null, hiring_size: null, funding_size: null, csuite_size: null };
@@ -60,7 +59,9 @@ export function classifySignals(triggers: any): SignalSizes {
   return result;
 }
 
-export function computeStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
+// ─── Signal Stars (1-3) ───
+
+export function computeSignalStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
   const sizes = [signals.role_change_size, signals.hiring_size, signals.funding_size, signals.csuite_size].filter(Boolean) as string[];
   const largeCount = sizes.filter((s) => s === "large").length;
   const mediumCount = sizes.filter((s) => s === "medium").length;
@@ -74,30 +75,75 @@ export function computeStars(signals: SignalSizes, reachReady: boolean): 1 | 2 |
   return 1;
 }
 
-/** Get stars from the reason object (server-computed) or fallback to client computation */
-export function getStars(reason: any, triggers: any, contacts?: any[]): 1 | 2 | 3 {
-  if (reason?.stars) return reason.stars as 1 | 2 | 3;
-  const signals = reason?.signals ?? classifySignals(triggers);
-  const reachReady = contacts ? contacts.some((c: any) => c.email || c.phone) : (reason?.reachability ?? 0) >= 12;
-  return computeStars(signals, reachReady);
+// ─── Reachability Stars (0-3) ───
+
+export function computeReachStars(contacts?: any[], reason?: any): 0 | 1 | 2 | 3 {
+  // Try from reason object first (server-computed)
+  if (reason?.reach_stars !== undefined) return reason.reach_stars as 0 | 1 | 2 | 3;
+
+  let hasEmail = false;
+  let hasPhone = false;
+  let hasLinkedIn = false;
+
+  if (reason) {
+    hasEmail = (reason.contact_email ?? 0) > 0;
+    hasPhone = (reason.contact_phone ?? 0) > 0;
+    hasLinkedIn = (reason.contact_linkedin ?? 0) > 0;
+  }
+
+  if (contacts && contacts.length > 0) {
+    hasEmail = hasEmail || contacts.some((c: any) => c.email);
+    hasPhone = hasPhone || contacts.some((c: any) => c.phone);
+    hasLinkedIn = hasLinkedIn || contacts.some((c: any) => c.linkedin_url);
+  }
+
+  const count = [hasEmail, hasPhone, hasLinkedIn].filter(Boolean).length;
+  if (count >= 3) return 3;
+  if (count === 2) return 2;
+  if (count === 1) return 1;
+  return 0;
 }
 
-export function starsDisplay(stars: 1 | 2 | 3): string {
+// ─── Get signal stars from reason or compute client-side ───
+
+export function getSignalStars(reason: any, triggers: any, contacts?: any[]): 1 | 2 | 3 {
+  if (reason?.signal_stars) return reason.signal_stars as 1 | 2 | 3;
+  // Legacy field fallback
+  if (reason?.stars) return reason.stars as 1 | 2 | 3;
+  const signals = reason?.signals ?? classifySignals(triggers);
+  const reachReady = contacts ? contacts.some((c: any) => c.email || c.phone) : (reason?.contact_email ?? 0) > 0 || (reason?.contact_phone ?? 0) > 0;
+  return computeSignalStars(signals, reachReady);
+}
+
+// ─── Priority Label (based only on signal stars) ───
+
+export type PriorityLevel = "High" | "Medium" | "Low";
+
+export function getPriorityLabel(signalStars: 1 | 2 | 3): PriorityLevel {
+  if (signalStars === 3) return "High";
+  if (signalStars === 2) return "Medium";
+  return "Low";
+}
+
+export function priorityBadgeColor(level: PriorityLevel): string {
+  if (level === "High") return "bg-orange-500/15 text-orange-600 border-orange-500/30";
+  if (level === "Medium") return "bg-yellow-500/15 text-yellow-600 border-yellow-500/30";
+  return "bg-muted text-muted-foreground border-border";
+}
+
+// ─── Display helpers ───
+
+export function signalStarsDisplay(stars: 1 | 2 | 3): string {
   if (stars === 3) return "★★★";
   if (stars === 2) return "★★☆";
   return "★☆☆";
 }
 
-export function starsLabel(stars: 1 | 2 | 3): string {
-  if (stars === 3) return "High";
-  if (stars === 2) return "Medium";
-  return "Low";
-}
-
-export function starsColor(stars: 1 | 2 | 3): string {
-  if (stars === 3) return "text-amber-500";
-  if (stars === 2) return "text-amber-400";
-  return "text-muted-foreground";
+export function reachStarsDisplay(stars: 0 | 1 | 2 | 3): string {
+  if (stars === 3) return "★★★";
+  if (stars === 2) return "★★☆";
+  if (stars === 1) return "★☆☆";
+  return "☆☆☆";
 }
 
 /** Build a short signal summary string for table rows */
@@ -174,17 +220,14 @@ export function getActionOrder(triggers: any): ("hr" | "cfo" | "growth" | "brief
   const signals = classifySignals(triggers);
   const actions: ("hr" | "cfo" | "growth" | "brief" | "push" | "export")[] = [];
 
-  // Push & claim first if any strong signal
   if (signals.role_change_size === "large" || signals.hiring_size === "large") {
     actions.push("push");
   }
 
-  // Signal-driven email priority
   if (signals.role_change_size) actions.push("hr");
   if (signals.csuite_size) actions.push("cfo");
   if (signals.hiring_size) actions.push("growth");
 
-  // Fill remaining
   if (!actions.includes("hr")) actions.push("hr");
   if (!actions.includes("cfo")) actions.push("cfo");
   if (!actions.includes("push")) actions.push("push");
