@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Download, Send, Eye, Loader2, AlertTriangle, ShieldX } from 'lucide-react';
 import { useLeadQueue, useRunScoring, useAccountContacts } from '@/hooks/useLeadEngine';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +13,8 @@ import * as XLSX from 'xlsx';
 import AccountDrawer from '@/components/lead-engine/AccountDrawer';
 import { getStars, starsDisplay, starsColor, starsLabel, signalSummary } from '@/lib/leadPriority';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
+import { useCrm } from '@/store/CrmContext';
+import { createEmptyWeekProgress } from '@/types/crm';
 
 function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
   return (
@@ -68,8 +71,124 @@ export default function LeadQueue() {
   const runScoring = useRunScoring();
   const [selectedLead, setSelectedLead] = useState<LeadWithAccount | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pushing, setPushing] = useState(false);
+  const { addContact, contacts: crmContacts } = useCrm();
 
   const handleView = (lead: LeadWithAccount) => { setSelectedLead(lead); setDrawerOpen(true); };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === leads.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(leads.map(l => l.id)));
+    }
+  };
+
+  const allSelected = leads.length > 0 && selectedIds.size === leads.length;
+
+  const handlePushToCRM = async () => {
+    const targetIds = selectedIds.size > 0 ? Array.from(selectedIds) : leads.map(l => l.id);
+    if (targetIds.length === 0) { toast.info('No leads selected'); return; }
+    setPushing(true);
+    try {
+      // Get the selected leads
+      const selectedLeads = leads.filter(l => targetIds.includes(l.id));
+      const accountIds = selectedLeads.map(l => l.account.id);
+
+      // Fetch contacts_le for these accounts
+      const { data: leContacts } = await supabase
+        .from('contacts_le')
+        .select('*')
+        .in('account_id', accountIds);
+
+      // Create CRM contacts from lead engine contacts
+      let created = 0;
+      for (const lead of selectedLeads) {
+        const acctContacts = (leContacts || []).filter(c => c.account_id === lead.account.id);
+
+        if (acctContacts.length === 0) {
+          // No contacts_le — create a placeholder contact from the account
+          const existsAlready = crmContacts.some(
+            c => c.company.toLowerCase() === lead.account.name.toLowerCase() && c.email === ''
+          );
+          if (!existsAlready) {
+            const today = new Date().toISOString().split('T')[0];
+            addContact({
+              firstName: lead.account.name.split(' ')[0] || 'Unknown',
+              lastName: lead.account.name.split(' ').slice(1).join(' ') || 'Contact',
+              company: lead.account.name,
+              title: '',
+              rolePersona: 'Other',
+              industry: lead.account.industry || '',
+              employeeCount: lead.account.employee_count?.toString() || '',
+              email: '',
+              linkedInUrl: '',
+              phone: '',
+              source: 'ZoomInfo',
+              renewalMonth: '',
+              campaignId: '',
+              status: 'Unworked',
+              startDate: today,
+              notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}`,
+            });
+            created++;
+          }
+        } else {
+          for (const c of acctContacts) {
+            // Skip if a CRM contact with same email already exists
+            const existsAlready = c.email && crmContacts.some(
+              crm => crm.email.toLowerCase() === c.email!.toLowerCase()
+            );
+            if (existsAlready) continue;
+
+            const today = new Date().toISOString().split('T')[0];
+            addContact({
+              firstName: c.first_name,
+              lastName: c.last_name,
+              company: lead.account.name,
+              title: c.title || '',
+              rolePersona: mapRolePersona(c.title, c.department),
+              industry: lead.account.industry || '',
+              employeeCount: lead.account.employee_count?.toString() || '',
+              email: c.email || '',
+              linkedInUrl: c.linkedin_url || '',
+              phone: c.phone || '',
+              source: 'ZoomInfo',
+              renewalMonth: '',
+              campaignId: '',
+              status: 'Unworked',
+              startDate: today,
+              notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}`,
+            });
+            created++;
+          }
+        }
+      }
+
+      // Mark as pushed in lead_queue
+      const { error } = await supabase
+        .from('lead_queue')
+        .update({ status: 'pushed' } as any)
+        .in('id', targetIds);
+      if (error) throw error;
+
+      toast.success(`Pushed ${selectedLeads.length} lead${selectedLeads.length > 1 ? 's' : ''} → ${created} contact${created !== 1 ? 's' : ''} added to CRM`);
+      setSelectedIds(new Set());
+    } catch (e: any) {
+      toast.error(e.message || 'Push to CRM failed');
+    } finally {
+      setPushing(false);
+    }
+  };
 
   return (
     <Layout>
@@ -92,7 +211,10 @@ export default function LeadQueue() {
             <Button variant="outline" size="sm" onClick={() => exportContactsCsv(leads)}>
               <Download size={16} className="mr-1" /> Export Contacts
             </Button>
-            <Button size="sm"><Send size={16} className="mr-1" /> Push All to CRM</Button>
+            <Button size="sm" onClick={handlePushToCRM} disabled={pushing || leads.length === 0}>
+              {pushing ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Send size={16} className="mr-1" />}
+              Push to CRM{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+            </Button>
           </div>
         </div>
 
@@ -101,6 +223,9 @@ export default function LeadQueue() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+                  </TableHead>
                   <TableHead className="w-14">Rank</TableHead>
                   <TableHead className="w-20">Priority</TableHead>
                   <TableHead>Company</TableHead>
@@ -114,15 +239,22 @@ export default function LeadQueue() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
                 ) : leads.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No leads yet. Click "Run Scoring" to generate today's queue.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No leads yet. Click "Run Scoring" to generate today's queue.</TableCell></TableRow>
                 ) : (
                   leads.map((lead) => {
                     const disposition = lead.account.disposition || 'active';
                     const stars = getStars(lead.reason, lead.account.triggers);
                     return (
-                      <TableRow key={lead.id} className="cursor-pointer" onClick={() => handleView(lead)}>
+                      <TableRow
+                        key={lead.id}
+                        className={`cursor-pointer ${selectedIds.has(lead.id) ? 'bg-accent/50' : ''}`}
+                        onClick={() => toggleSelect(lead.id)}
+                      >
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          <Checkbox checked={selectedIds.has(lead.id)} onCheckedChange={() => toggleSelect(lead.id)} aria-label={`Select ${lead.account.name}`} />
+                        </TableCell>
                         <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
                         <TableCell><StarsBadge stars={stars} /></TableCell>
                         <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
@@ -148,4 +280,19 @@ export default function LeadQueue() {
       <AccountDrawer lead={selectedLead} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </Layout>
   );
+}
+
+/** Map a title/department string to a CRM RolePersona */
+function mapRolePersona(title?: string | null, department?: string | null): import('@/types/crm').RolePersona {
+  const t = `${(title || '').toLowerCase()} ${(department || '').toLowerCase()}`;
+  if (t.includes('ceo') || t.includes('chief executive')) return 'CEO';
+  if (t.includes('cfo') || t.includes('chief financial')) return 'CFO';
+  if (t.includes('coo') || t.includes('chief operating')) return 'COO';
+  if (t.includes('chro') || t.includes('chief human')) return 'CHRO';
+  if (t.includes('founder')) return 'Founder';
+  if (t.includes('hr') || t.includes('human resources') || t.includes('people')) return 'HR';
+  if (t.includes('benefit')) return 'Benefits Leader';
+  if (t.includes('finance') || t.includes('controller') || t.includes('payroll')) return 'Finance';
+  if (t.includes('operations') || t.includes('ops')) return 'Ops';
+  return 'Other';
 }
