@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CalendarCheck, Columns3, Megaphone, FileText,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Target, Handshake, Database, Settings
 } from 'lucide-react';
 import { useState } from 'react';
 import { useCrm } from '@/store/CrmContext';
@@ -14,7 +14,12 @@ const navItems = [
   { to: '/pipeline', icon: Columns3, label: 'Pipeline' },
   { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
   { to: '/templates', icon: FileText, label: 'Templates' },
-];
+  { to: '/leads', icon: Target, label: 'Lead Engine', divider: true },
+  { to: '/lead-queue', icon: Target, label: 'Lead Queue' },
+  { to: '/coi-queue', icon: Handshake, label: 'COI Queue' },
+  { to: '/enrichment', icon: Database, label: 'Enrichment' },
+  { to: '/lead-settings', icon: Settings, label: 'Settings' },
+] as const;
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -44,9 +49,13 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 py-3 px-2 space-y-1">
-          {navItems.map(item => {
+          {navItems.map((item, idx) => {
             const isActive = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
             return (
+              <div key={item.to}>
+                {'divider' in item && item.divider && (
+                  <div className={`my-2 border-t border-sidebar-border ${!collapsed ? 'mx-2' : ''}`} />
+                )}
               <Link
                 key={item.to}
                 to={item.to}
@@ -66,6 +75,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   </span>
                 )}
               </Link>
+              </div>
             );
           })}
         </nav>

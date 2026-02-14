@@ -11,6 +11,11 @@ import Today from "./pages/Today";
 import Pipeline from "./pages/Pipeline";
 import Campaigns from "./pages/Campaigns";
 import Templates from "./pages/Templates";
+import LeadDashboard from "./pages/LeadDashboard";
+import LeadQueue from "./pages/LeadQueue";
+import COIQueue from "./pages/COIQueue";
+import Enrichment from "./pages/Enrichment";
+import LeadSettings from "./pages/LeadSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +35,11 @@ const App = () => (
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/templates" element={<Templates />} />
+            <Route path="/leads" element={<LeadDashboard />} />
+            <Route path="/lead-queue" element={<LeadQueue />} />
+            <Route path="/coi-queue" element={<COIQueue />} />
+            <Route path="/enrichment" element={<Enrichment />} />
+            <Route path="/lead-settings" element={<LeadSettings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -14,7 +14,484 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      account_briefs: {
+        Row: {
+          account_id: string | null
+          approved_at: string | null
+          approved_by: string | null
+          brief_markdown: string
+          generated_at: string
+          id: string
+          inputs: Json | null
+          model: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          brief_markdown?: string
+          generated_at?: string
+          id?: string
+          inputs?: Json | null
+          model?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          brief_markdown?: string
+          generated_at?: string
+          id?: string
+          inputs?: Json | null
+          model?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_briefs_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      accounts: {
+        Row: {
+          created_at: string
+          domain: string | null
+          employee_count: number | null
+          geography_bucket: string | null
+          hq_city: string | null
+          hq_country: string | null
+          hq_state: string | null
+          icp_score: number | null
+          id: string
+          industry: string | null
+          lead_score: number | null
+          naics_code: string | null
+          name: string
+          notes: string | null
+          revenue_range: string | null
+          source: string | null
+          status: string | null
+          sub_industry: string | null
+          triggers: Json | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          created_at?: string
+          domain?: string | null
+          employee_count?: number | null
+          geography_bucket?: string | null
+          hq_city?: string | null
+          hq_country?: string | null
+          hq_state?: string | null
+          icp_score?: number | null
+          id?: string
+          industry?: string | null
+          lead_score?: number | null
+          naics_code?: string | null
+          name: string
+          notes?: string | null
+          revenue_range?: string | null
+          source?: string | null
+          status?: string | null
+          sub_industry?: string | null
+          triggers?: Json | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          created_at?: string
+          domain?: string | null
+          employee_count?: number | null
+          geography_bucket?: string | null
+          hq_city?: string | null
+          hq_country?: string | null
+          hq_state?: string | null
+          icp_score?: number | null
+          id?: string
+          industry?: string | null
+          lead_score?: number | null
+          naics_code?: string | null
+          name?: string
+          notes?: string | null
+          revenue_range?: string | null
+          source?: string | null
+          status?: string | null
+          sub_industry?: string | null
+          triggers?: Json | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
+      audit_log: {
+        Row: {
+          action: string
+          actor: string | null
+          details: Json | null
+          entity_id: string | null
+          entity_type: string | null
+          event_time: string
+          id: string
+        }
+        Insert: {
+          action: string
+          actor?: string | null
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string | null
+          event_time?: string
+          id?: string
+        }
+        Update: {
+          action?: string
+          actor?: string | null
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string | null
+          event_time?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      coi_contacts: {
+        Row: {
+          coi_id: string | null
+          created_at: string
+          email: string | null
+          first_name: string
+          id: string
+          last_name: string
+          linkedin_url: string | null
+          location: string | null
+          phone: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          coi_id?: string | null
+          created_at?: string
+          email?: string | null
+          first_name: string
+          id?: string
+          last_name: string
+          linkedin_url?: string | null
+          location?: string | null
+          phone?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          coi_id?: string | null
+          created_at?: string
+          email?: string | null
+          first_name?: string
+          id?: string
+          last_name?: string
+          linkedin_url?: string | null
+          location?: string | null
+          phone?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coi_contacts_coi_id_fkey"
+            columns: ["coi_id"]
+            isOneToOne: false
+            referencedRelation: "cois"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coi_queue: {
+        Row: {
+          coi_id: string | null
+          created_at: string
+          id: string
+          priority_rank: number
+          reason: Json | null
+          run_date: string
+          score: number
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          coi_id?: string | null
+          created_at?: string
+          id?: string
+          priority_rank: number
+          reason?: Json | null
+          run_date?: string
+          score?: number
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          coi_id?: string | null
+          created_at?: string
+          id?: string
+          priority_rank?: number
+          reason?: Json | null
+          run_date?: string
+          score?: number
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coi_queue_coi_id_fkey"
+            columns: ["coi_id"]
+            isOneToOne: false
+            referencedRelation: "cois"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cois: {
+        Row: {
+          created_at: string
+          firm_type: string | null
+          id: string
+          name: string
+          notes: string | null
+          region: string | null
+          source: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          created_at?: string
+          firm_type?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          region?: string | null
+          source?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          created_at?: string
+          firm_type?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          region?: string | null
+          source?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
+      contacts_le: {
+        Row: {
+          account_id: string | null
+          created_at: string
+          department: string | null
+          email: string | null
+          first_name: string
+          id: string
+          is_primary: boolean | null
+          last_name: string
+          linkedin_url: string | null
+          location: string | null
+          phone: string | null
+          seniority: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          created_at?: string
+          department?: string | null
+          email?: string | null
+          first_name: string
+          id?: string
+          is_primary?: boolean | null
+          last_name: string
+          linkedin_url?: string | null
+          location?: string | null
+          phone?: string | null
+          seniority?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          created_at?: string
+          department?: string | null
+          email?: string | null
+          first_name?: string
+          id?: string
+          is_primary?: boolean | null
+          last_name?: string
+          linkedin_url?: string | null
+          location?: string | null
+          phone?: string | null
+          seniority?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_le_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_drafts: {
+        Row: {
+          account_id: string | null
+          approved_at: string | null
+          approved_by: string | null
+          body_markdown: string | null
+          contact_id: string | null
+          generated_at: string
+          id: string
+          model: string | null
+          persona: string | null
+          send_status: string | null
+          subject: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          body_markdown?: string | null
+          contact_id?: string | null
+          generated_at?: string
+          id?: string
+          model?: string | null
+          persona?: string | null
+          send_status?: string | null
+          subject?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          body_markdown?: string | null
+          contact_id?: string | null
+          generated_at?: string
+          id?: string
+          model?: string | null
+          persona?: string | null
+          send_status?: string | null
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_drafts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_drafts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_le"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      enrichment_runs: {
+        Row: {
+          completed_at: string | null
+          error_log: Json | null
+          file_ref: string | null
+          id: string
+          rows_merged: number | null
+          rows_new_accounts: number | null
+          rows_new_contacts: number | null
+          rows_processed: number | null
+          rows_skipped: number | null
+          rows_total: number | null
+          run_type: string
+          started_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          error_log?: Json | null
+          file_ref?: string | null
+          id?: string
+          rows_merged?: number | null
+          rows_new_accounts?: number | null
+          rows_new_contacts?: number | null
+          rows_processed?: number | null
+          rows_skipped?: number | null
+          rows_total?: number | null
+          run_type: string
+          started_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          error_log?: Json | null
+          file_ref?: string | null
+          id?: string
+          rows_merged?: number | null
+          rows_new_accounts?: number | null
+          rows_new_contacts?: number | null
+          rows_processed?: number | null
+          rows_skipped?: number | null
+          rows_total?: number | null
+          run_type?: string
+          started_at?: string
+        }
+        Relationships: []
+      }
+      lead_queue: {
+        Row: {
+          account_id: string | null
+          created_at: string
+          id: string
+          priority_rank: number
+          reason: Json | null
+          run_date: string
+          score: number
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          created_at?: string
+          id?: string
+          priority_rank: number
+          reason?: Json | null
+          run_date?: string
+          score?: number
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          created_at?: string
+          id?: string
+          priority_rank?: number
+          reason?: Json | null
+          run_date?: string
+          score?: number
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_queue_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
