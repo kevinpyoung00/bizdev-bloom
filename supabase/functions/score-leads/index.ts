@@ -6,27 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── ICP Configuration (kept for reference, not used in numeric score) ───
-
-const INDUSTRY_SCORES: Record<string, number> = {
-  "healthcare and social assistance": 20,
-  "biotech and life sciences": 18,
-  "professional, scientific, and technical services": 16,
-  "advanced manufacturing and medical devices": 14,
-  "higher education and nonprofits": 12,
-};
-
-const INDUSTRY_KEYWORDS: [string, number][] = [
-  ["health", 18], ["biotech", 17], ["life sci", 17], ["pharma", 16],
-  ["professional", 14], ["technical", 14], ["engineering", 14],
-  ["manufactur", 12], ["medical device", 14],
-  ["education", 10], ["nonprofit", 10], ["university", 10],
-];
-
-const INDUSTRY_DEPRIORITIZE = [
-  "restaurants", "small retail", "seasonal staffing", "staffing agencies",
-];
-
 // ─── Geography helpers ───
 
 function normalizeState(s: string | null): string {
@@ -53,116 +32,11 @@ function deriveDomain(domain: string | null, website: string | null): string | n
   } catch { return null; }
 }
 
-// ─── Fit scoring (kept for reference only, not in total) ───
-
-function scoreIndustry(industry: string | null): number {
-  if (!industry) return 3;
-  const lower = industry.toLowerCase();
-  for (const dep of INDUSTRY_DEPRIORITIZE) { if (lower.includes(dep)) return 2; }
-  for (const [key, score] of Object.entries(INDUSTRY_SCORES)) { if (lower.includes(key) || key.includes(lower)) return score; }
-  for (const [kw, score] of INDUSTRY_KEYWORDS) { if (lower.includes(kw)) return score; }
-  return 5;
-}
-
-function parseEmployeeCount(raw: any): number | null {
-  if (typeof raw === "number") return raw;
-  if (typeof raw === "string") {
-    const rangeMatch = raw.match(/(\d+)\s*[-–]\s*(\d+)/);
-    if (rangeMatch) return Math.round((parseInt(rangeMatch[1]) + parseInt(rangeMatch[2])) / 2);
-    const num = parseInt(raw.replace(/,/g, ""));
-    if (!isNaN(num)) return num;
-  }
-  return null;
-}
-
-function scoreSize(empCount: number | null): number {
-  if (!empCount || empCount <= 0) return 0;
-  if (empCount >= 50 && empCount <= 250) return 20;
-  if (empCount >= 25 && empCount < 50) return 12;
-  if (empCount > 250 && empCount <= 500) return 14;
-  if (empCount > 500 && empCount <= 1000) return 6;
-  if (empCount > 1000) return 2;
-  return 2;
-}
-
 // ─── HR keyword list ───
 
 const HR_KEYWORDS = ["hr", "human resources", "benefits", "people ops", "people operations", "finance", "controller", "payroll", "total rewards"];
 
-// ─── Trigger detection (boolean per trigger) ───
-
-function detectTriggers(triggers: any, contacts: any[]): { hiring: boolean; role_change: boolean; funding: boolean; csuite: boolean } {
-  const result = { hiring: false, role_change: false, funding: false, csuite: false };
-  if (!triggers) return result;
-
-  // 1) Hiring: ≥6 open roles in 60d is a trigger (3-5 is only a small star signal)
-  const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
-  if (openRoles >= 6) result.hiring = true;
-
-  // 2) HR/People/Benefits role change ≤60d
-  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
-  if (rc) {
-    const items = Array.isArray(rc) ? rc : [rc];
-    for (const item of items) {
-      const combined = `${(item.title || "").toLowerCase()} ${(item.department || "").toLowerCase()}`;
-      if (HR_KEYWORDS.some((kw) => combined.includes(kw)) && (item.days_ago ?? 999) <= 60) {
-        result.role_change = true;
-        break;
-      }
-    }
-  }
-
-  // 3) Funding ≤180d
-  const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
-  if (funding) {
-    if (typeof funding === "boolean" && funding) result.funding = true;
-    else if (typeof funding === "object") {
-      const mo = funding.months_ago ?? 999;
-      if (mo <= 6) result.funding = true;
-    }
-  }
-
-  // 4) C-suite ≤90d
-  const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
-  if (cs) {
-    const mo = cs.months_ago ?? cs.recency_months ?? null;
-    if (mo !== null && mo <= 3) result.csuite = true;
-    else if (mo === null && (cs === true || (typeof cs === "object" && Object.keys(cs).length > 0))) result.csuite = true;
-  }
-
-  return result;
-}
-
-function triggerLadder(fired: { hiring: boolean; role_change: boolean; funding: boolean; csuite: boolean }): number {
-  const count = [fired.hiring, fired.role_change, fired.funding, fired.csuite].filter(Boolean).length;
-  if (count >= 4) return 70;
-  if (count === 3) return 60;
-  if (count === 2) return 50;
-  if (count === 1) return 40;
-  return 0;
-}
-
-// ─── Contact Data scoring (0–30) ───
-
-function scoreContactData(contacts: any[]): { linkedin: number; email: number; phone: number; total: number } {
-  if (!contacts || contacts.length === 0) return { linkedin: 0, email: 0, phone: 0, total: 0 };
-
-  // Check for target persona contacts
-  const targetContacts = contacts.filter((c) => {
-    const t = `${(c.title || "").toLowerCase()} ${(c.department || "").toLowerCase()}`;
-    return HR_KEYWORDS.some((kw) => t.includes(kw));
-  });
-  // If we have target persona contacts, score on those; otherwise score on all contacts
-  const pool = targetContacts.length > 0 ? targetContacts : contacts;
-
-  const linkedin = pool.some((c) => c.linkedin_url) ? 10 : 0;
-  const email = pool.some((c) => c.email) ? 10 : 0;
-  const phone = pool.some((c) => c.phone) ? 10 : 0;
-  const total = Math.min(30, linkedin + email + phone);
-  return { linkedin, email, phone, total };
-}
-
-// ─── Signal classification for star priority ───
+// ─── Signal classification ───
 
 interface SignalSizes {
   role_change_size: "large" | "medium" | "small" | null;
@@ -204,7 +78,6 @@ function classifySignals(triggers: any): SignalSizes {
     } else result.funding_size = "small";
   }
 
-  // C-suite — never Large, at most Medium
   const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
   if (cs) {
     const mo = cs.months_ago ?? cs.recency_months ?? null;
@@ -217,7 +90,9 @@ function classifySignals(triggers: any): SignalSizes {
   return result;
 }
 
-function computeStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
+// ─── Signal Stars (1-3) ───
+
+function computeSignalStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
   const sizes = [signals.role_change_size, signals.hiring_size, signals.funding_size, signals.csuite_size].filter(Boolean) as string[];
   const largeCount = sizes.filter((s) => s === "large").length;
   const mediumCount = sizes.filter((s) => s === "medium").length;
@@ -231,23 +106,71 @@ function computeStars(signals: SignalSizes, reachReady: boolean): 1 | 2 | 3 {
   return 1;
 }
 
+// ─── Reachability Stars (0-3) ───
+
+function computeReachStars(contacts: any[]): 0 | 1 | 2 | 3 {
+  if (!contacts || contacts.length === 0) return 0;
+  const hasEmail = contacts.some((c) => c.email);
+  const hasPhone = contacts.some((c) => c.phone);
+  const hasLinkedIn = contacts.some((c) => c.linkedin_url);
+  const count = [hasEmail, hasPhone, hasLinkedIn].filter(Boolean).length;
+  if (count >= 3) return 3;
+  if (count === 2) return 2;
+  if (count === 1) return 1;
+  return 0;
+}
+
+// ─── Trigger detection (boolean per trigger) ───
+
+function detectTriggers(triggers: any): { hiring: boolean; role_change: boolean; funding: boolean; csuite: boolean } {
+  const result = { hiring: false, role_change: false, funding: false, csuite: false };
+  if (!triggers) return result;
+
+  const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
+  if (openRoles >= 6) result.hiring = true;
+
+  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
+  if (rc) {
+    const items = Array.isArray(rc) ? rc : [rc];
+    for (const item of items) {
+      const combined = `${(item.title || "").toLowerCase()} ${(item.department || "").toLowerCase()}`;
+      if (HR_KEYWORDS.some((kw) => combined.includes(kw)) && (item.days_ago ?? 999) <= 60) {
+        result.role_change = true;
+        break;
+      }
+    }
+  }
+
+  const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
+  if (funding) {
+    if (typeof funding === "boolean" && funding) result.funding = true;
+    else if (typeof funding === "object") {
+      const mo = funding.months_ago ?? 999;
+      if (mo <= 6) result.funding = true;
+    }
+  }
+
+  const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
+  if (cs) {
+    const mo = cs.months_ago ?? cs.recency_months ?? null;
+    if (mo !== null && mo <= 3) result.csuite = true;
+    else if (mo === null && (cs === true || (typeof cs === "object" && Object.keys(cs).length > 0))) result.csuite = true;
+  }
+
+  return result;
+}
+
 // ─── Main scoring ───
 
 interface PriorityReason {
   triggers_fired: { hiring: boolean; role_change: boolean; funding: boolean; csuite: boolean };
-  trigger_count: number;
-  trigger_points: number;
-  contact_linkedin: number;
+  signal_stars: 1 | 2 | 3;
+  reach_stars: 0 | 1 | 2 | 3;
   contact_email: number;
   contact_phone: number;
-  contact_points: number;
-  total: number;
+  contact_linkedin: number;
   guardrail: string | null;
   signals: SignalSizes;
-  stars: 1 | 2 | 3;
-  // kept for reference, not in total
-  industry: number;
-  size: number;
 }
 
 interface ScoredAccount {
@@ -260,8 +183,8 @@ interface ScoredAccount {
   geography_bucket: string;
   disposition: string;
   triggers: any;
-  score: number;
-  stars: 1 | 2 | 3;
+  signal_stars: 1 | 2 | 3;
+  reach_stars: 0 | 1 | 2 | 3;
   reasons: PriorityReason;
 }
 
@@ -269,7 +192,6 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   const geoBucket = getGeoBucket(account.hq_state);
   const triggers = account.triggers || {};
   const disposition = account.disposition || "active";
-  const empCount = parseEmployeeCount(account.employee_count);
 
   const resolvedDomain = deriveDomain(account.domain, account.website);
   let guardrail: string | null = null;
@@ -277,62 +199,52 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   if (disposition === "suppressed") guardrail = "suppressed";
   if (disposition?.startsWith("rejected_")) guardrail = `disposition_${disposition}`;
 
-  const industry = scoreIndustry(account.industry);
-  const size = scoreSize(empCount);
-
-  const fired = guardrail ? { hiring: false, role_change: false, funding: false, csuite: false } : detectTriggers(triggers, contacts);
-  const triggerPoints = guardrail ? 0 : triggerLadder(fired);
-  const triggerCount = [fired.hiring, fired.role_change, fired.funding, fired.csuite].filter(Boolean).length;
-
-  const contactData = guardrail ? { linkedin: 0, email: 0, phone: 0, total: 0 } : scoreContactData(contacts);
-
-  const total = guardrail ? 0 : Math.min(100, triggerPoints + contactData.total);
-
+  const fired = guardrail ? { hiring: false, role_change: false, funding: false, csuite: false } : detectTriggers(triggers);
   const signalSizes = classifySignals(triggers);
   const reachReady = (contacts || []).some((c: any) => c.email || c.phone);
-  const stars = guardrail ? 1 : computeStars(signalSizes, reachReady);
+  const signal_stars = guardrail ? 1 as const : computeSignalStars(signalSizes, reachReady);
+  const reach_stars = guardrail ? 0 as const : computeReachStars(contacts);
+
+  const hasEmail = contacts.some((c) => c.email) ? 1 : 0;
+  const hasPhone = contacts.some((c) => c.phone) ? 1 : 0;
+  const hasLinkedIn = contacts.some((c) => c.linkedin_url) ? 1 : 0;
 
   return {
     id: account.id,
     name: account.name,
     domain: resolvedDomain,
     industry: account.industry,
-    employee_count: empCount,
+    employee_count: typeof account.employee_count === "number" ? account.employee_count : null,
     hq_state: account.hq_state,
     geography_bucket: geoBucket,
     disposition,
     triggers,
-    score: total,
-    stars,
+    signal_stars,
+    reach_stars,
     reasons: {
       triggers_fired: fired,
-      trigger_count: triggerCount,
-      trigger_points: triggerPoints,
-      contact_linkedin: contactData.linkedin,
-      contact_email: contactData.email,
-      contact_phone: contactData.phone,
-      contact_points: contactData.total,
-      total,
+      signal_stars,
+      reach_stars,
+      contact_email: hasEmail,
+      contact_phone: hasPhone,
+      contact_linkedin: hasLinkedIn,
       guardrail,
       signals: signalSizes,
-      stars,
-      industry,
-      size,
     },
   };
 }
 
 // ─── Selection with geography gates ───
+// NE and National now require ★★★ signal stars instead of numeric score thresholds
 
 function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
   const eligible = scored.filter((a) => a.disposition === "active" || a.disposition === "needs_review");
 
   const sorted = [...eligible].sort((a, b) => {
-    if (b.stars !== a.stars) return b.stars - a.stars;
-    if (b.score !== a.score) return b.score - a.score;
-    // Tie-breakers: hiring strength → role-change recency → contact points → size proximity → domain
-    if (b.reasons.trigger_points !== a.reasons.trigger_points) return b.reasons.trigger_points - a.reasons.trigger_points;
-    if (b.reasons.contact_points !== a.reasons.contact_points) return b.reasons.contact_points - a.reasons.contact_points;
+    // Sort by signal stars first, then reach stars
+    if (b.signal_stars !== a.signal_stars) return b.signal_stars - a.signal_stars;
+    if (b.reach_stars !== a.reach_stars) return b.reach_stars - a.reach_stars;
+    // Tie-breakers: employee count proximity to 150 → domain
     const aDist = Math.abs((a.employee_count ?? 0) - 150);
     const bDist = Math.abs((b.employee_count ?? 0) - 150);
     if (aDist !== bDist) return aDist - bDist;
@@ -340,8 +252,8 @@ function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
   });
 
   const maPool = sorted.filter((a) => a.geography_bucket === "MA");
-  const nePool = sorted.filter((a) => a.geography_bucket === "NE" && a.score >= 85);
-  const usPool = sorted.filter((a) => a.geography_bucket === "US" && a.score >= 90);
+  const nePool = sorted.filter((a) => a.geography_bucket === "NE" && a.signal_stars === 3);
+  const usPool = sorted.filter((a) => a.geography_bucket === "US" && a.signal_stars === 3);
 
   const selected: ScoredAccount[] = [];
   const usedIds = new Set<string>();
@@ -378,7 +290,6 @@ Deno.serve(async (req) => {
     }
 
     if (!dryRun) {
-      // Delete any existing queue for this date so re-runs work
       await supabase.from("lead_queue").delete().eq("run_date", runDate);
     }
 
@@ -397,33 +308,39 @@ Deno.serve(async (req) => {
 
     if (!dryRun) {
       for (const s of scored) {
-        await supabase.from("accounts").update({ icp_score: Math.round(s.score), geography_bucket: s.geography_bucket }).eq("id", s.id);
+        await supabase.from("accounts").update({ geography_bucket: s.geography_bucket }).eq("id", s.id);
       }
     }
 
     const top50 = selectTop50(scored);
     const maCount = top50.filter((a) => a.geography_bucket === "MA").length;
-    const neCount = top50.filter((a) => a.geography_bucket === "NE").length;
+    const neCountFinal = top50.filter((a) => a.geography_bucket === "NE").length;
     const usCountFinal = top50.filter((a) => a.geography_bucket === "US").length;
-    const avgScore = top50.length > 0 ? Math.round(top50.reduce((s, a) => s + a.score, 0) / top50.length) : 0;
 
     if (!dryRun && top50.length > 0) {
       const rows = top50.map((a, i) => ({
-        account_id: a.id, run_date: runDate, priority_rank: i + 1, score: Math.round(a.score), reason: a.reasons, status: "pending",
+        account_id: a.id, run_date: runDate, priority_rank: i + 1,
+        score: a.signal_stars, // Store signal_stars in score column for backward compat
+        reason: a.reasons, status: "pending",
       }));
       const { error: insertErr } = await supabase.from("lead_queue").insert(rows);
       if (insertErr) throw insertErr;
-      await supabase.from("audit_log").insert({ actor: "system", action: "daily_lead_run", entity_type: "lead_queue", details: { run_date: runDate, total: top50.length, ma: maCount, ne: neCount, us: usCountFinal, avg_score: avgScore } });
+      await supabase.from("audit_log").insert({ actor: "system", action: "daily_lead_run", entity_type: "lead_queue", details: { run_date: runDate, total: top50.length, ma: maCount, ne: neCountFinal, us: usCountFinal } });
     }
 
     return new Response(JSON.stringify({
       success: true, dry_run: dryRun, run_date: runDate,
-      stats: { total: top50.length, ma: maCount, ne: neCount, us: usCountFinal, avg_score: avgScore, total_candidates: scored.length },
-      leads: top50.map((a, i) => ({ rank: i + 1, score: a.score, stars: a.stars, name: a.name, domain: a.domain, industry: a.industry, employee_count: a.employee_count, geography: a.geography_bucket, state: a.hq_state, disposition: a.disposition, reasons: a.reasons })),
+      stats: { total: top50.length, ma: maCount, ne: neCountFinal, us: usCountFinal, total_candidates: scored.length },
+      leads: top50.map((a, i) => ({
+        rank: i + 1, signal_stars: a.signal_stars, reach_stars: a.reach_stars,
+        name: a.name, domain: a.domain, industry: a.industry,
+        employee_count: a.employee_count, geography: a.geography_bucket,
+        state: a.hq_state, disposition: a.disposition, reasons: a.reasons,
+      })),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("Score leads error:", err);
     return new Response(JSON.stringify({ success: false, error: err.message }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

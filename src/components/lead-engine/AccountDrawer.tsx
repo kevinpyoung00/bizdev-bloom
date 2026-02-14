@@ -10,7 +10,10 @@ import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
 import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { getStars, starsDisplay, starsColor, starsLabel, signalDetails, getActionOrder } from '@/lib/leadPriority';
+import {
+  getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
+  getPriorityLabel, priorityBadgeColor, signalDetails, getActionOrder, classifySignals
+} from '@/lib/leadPriority';
 
 interface AccountDrawerProps {
   lead: LeadWithAccount | null;
@@ -28,34 +31,11 @@ const DISPOSITION_OPTIONS = [
   { value: 'suppressed', label: 'Suppressed' },
 ];
 
-function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-xs text-muted-foreground w-32 shrink-0">{label}</span>
-      <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs font-medium w-10 text-right text-foreground">{value}/{max}</span>
-    </div>
-  );
-}
-
 function TriggerChip({ label, active }: { label: string; active: boolean }) {
   return (
     <Badge variant={active ? 'default' : 'outline'} className={`text-xs ${!active ? 'opacity-40' : ''}`}>
       {label}
     </Badge>
-  );
-}
-
-function ContactChannel({ label, icon: Icon, active }: { label: string; icon: any; active: boolean }) {
-  return (
-    <div className={`flex items-center gap-1.5 text-xs ${active ? 'text-primary font-medium' : 'text-muted-foreground opacity-50'}`}>
-      <Icon size={12} />
-      <span>{label}</span>
-      <span className="font-medium">{active ? '+10' : '0'}</span>
-    </div>
   );
 }
 
@@ -70,25 +50,25 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   if (!lead) return null;
-  const { account, score, reason, priority_rank } = lead;
+  const { account, reason, priority_rank } = lead;
   const rawReason = reason || {};
 
-  // New model fields
-  const triggersFired = rawReason.triggers_fired ?? { hiring: false, role_change: false, funding: false, csuite: false };
-  const triggerCount = rawReason.trigger_count ?? [triggersFired.hiring, triggersFired.role_change, triggersFired.funding, triggersFired.csuite].filter(Boolean).length;
-  const triggerPoints = rawReason.trigger_points ?? (triggerCount >= 4 ? 70 : triggerCount === 3 ? 60 : triggerCount === 2 ? 50 : triggerCount === 1 ? 40 : 0);
-  const contactLinkedin = rawReason.contact_linkedin ?? 0;
-  const contactEmail = rawReason.contact_email ?? 0;
-  const contactPhone = rawReason.contact_phone ?? 0;
-  const contactPoints = rawReason.contact_points ?? Math.min(30, contactLinkedin + contactEmail + contactPhone);
-  const totalScore = rawReason.total ?? Math.min(100, triggerPoints + contactPoints);
-  const guardrail = rawReason.guardrail ?? null;
-
-  const disposition = account.disposition || 'active';
-  const stars = getStars(rawReason, account.triggers);
+  const signalStars = getSignalStars(rawReason, account.triggers, contacts);
+  const reachStars = computeReachStars(contacts, rawReason);
+  const priority = getPriorityLabel(signalStars);
   const signals = signalDetails(account.triggers);
   const actionOrder = getActionOrder(account.triggers);
+  const guardrail = rawReason.guardrail ?? null;
   const isBlocked = !!guardrail;
+  const disposition = account.disposition || 'active';
+
+  // Trigger detection for chips
+  const triggersFired = rawReason.triggers_fired ?? { hiring: false, role_change: false, funding: false, csuite: false };
+
+  // Reachability breakdown
+  const hasEmail = (rawReason.contact_email ?? 0) > 0 || contacts.some((c: any) => c.email);
+  const hasPhone = (rawReason.contact_phone ?? 0) > 0 || contacts.some((c: any) => c.phone);
+  const hasLinkedIn = (rawReason.contact_linkedin ?? 0) > 0 || contacts.some((c: any) => c.linkedin_url);
 
   const handleGenerateBrief = async () => {
     try {
@@ -113,7 +93,6 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Build action buttons in signal-driven order
   const actionButtons = actionOrder.map((action) => {
     switch (action) {
       case 'push': return <Button key="push" size="sm"><Send size={14} className="mr-1" /> Claim & Push</Button>;
@@ -162,7 +141,6 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{account.name}</span>
-            <span className={`text-lg ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>
             <Badge variant="secondary">#{priority_rank}</Badge>
           </SheetTitle>
         </SheetHeader>
@@ -178,9 +156,36 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             </div>
           )}
 
-          {/* Stars + Signals */}
+          {/* Dual Star Display */}
+          <div className="border border-border rounded-lg p-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-16">Signals</span>
+                <span className="text-xl font-bold tracking-wide" style={{ color: '#FFA500' }}>
+                  {signalStarsDisplay(signalStars)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-16">Reach</span>
+                <span className="text-xl font-bold tracking-wide" style={{ color: '#1E90FF' }}>
+                  {reachStarsDisplay(reachStars)}
+                </span>
+              </div>
+              <Badge variant="outline" className={`w-fit text-xs mt-1 ${priorityBadgeColor(priority)}`}>
+                {priority.toUpperCase()} PRIORITY
+              </Badge>
+            </div>
+          </div>
+
+          {/* Signal Details */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Signals</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Signal Breakdown</h3>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <TriggerChip label="Hiring" active={triggersFired.hiring} />
+              <TriggerChip label="HR Role Change" active={triggersFired.role_change} />
+              <TriggerChip label="Funding" active={triggersFired.funding} />
+              <TriggerChip label="C-Suite" active={triggersFired.csuite} />
+            </div>
             {signals.length > 0 ? (
               <ul className="space-y-1">
                 {signals.map((s, i) => (
@@ -190,6 +195,24 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             ) : (
               <p className="text-sm text-muted-foreground">No timing signals detected.</p>
             )}
+          </div>
+
+          <Separator />
+
+          {/* Reachability Breakdown */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Reachability Breakdown</h3>
+            <div className="flex flex-wrap gap-4">
+              <div className={`flex items-center gap-1.5 text-xs ${hasEmail ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={hasEmail ? { color: '#1E90FF' } : {}}>
+                <Mail size={12} /> Email {hasEmail ? '✓' : '✗'}
+              </div>
+              <div className={`flex items-center gap-1.5 text-xs ${hasPhone ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={hasPhone ? { color: '#1E90FF' } : {}}>
+                <Phone size={12} /> Phone {hasPhone ? '✓' : '✗'}
+              </div>
+              <div className={`flex items-center gap-1.5 text-xs ${hasLinkedIn ? 'font-medium' : 'text-muted-foreground opacity-50'}`} style={hasLinkedIn ? { color: '#1E90FF' } : {}}>
+                <Linkedin size={12} /> LinkedIn {hasLinkedIn ? '✓' : '✗'}
+              </div>
+            </div>
           </div>
 
           <Separator />
@@ -224,46 +247,6 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                 {DISPOSITION_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-
-          <Separator />
-
-          {/* Priority Outreach Breakdown */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Priority Outreach Breakdown</h3>
-            <div className="space-y-3">
-              {/* Triggers section */}
-              <div>
-                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-2">Triggers ({triggerCount} fired → {triggerPoints}/70)</p>
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  <TriggerChip label="Hiring" active={triggersFired.hiring} />
-                  <TriggerChip label="HR Role Change" active={triggersFired.role_change} />
-                  <TriggerChip label="Funding" active={triggersFired.funding} />
-                  <TriggerChip label="C-Suite" active={triggersFired.csuite} />
-                </div>
-                <ScoreBar label="Trigger Score" value={triggerPoints} max={70} />
-              </div>
-
-              <Separator className="my-1" />
-
-              {/* Contact Data section */}
-              <div>
-                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-2">Contact Data ({contactPoints}/30)</p>
-                <div className="flex flex-wrap gap-4 mb-2">
-                  <ContactChannel label="LinkedIn" icon={Linkedin} active={contactLinkedin > 0} />
-                  <ContactChannel label="Email" icon={Mail} active={contactEmail > 0} />
-                  <ContactChannel label="Phone" icon={Phone} active={contactPhone > 0} />
-                </div>
-                <ScoreBar label="Contact Score" value={contactPoints} max={30} />
-              </div>
-
-              <Separator className="my-1" />
-
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Total Score</span>
-                <span className="font-bold text-foreground">{totalScore} / 100</span>
-              </div>
-            </div>
           </div>
 
           <Separator />
@@ -304,7 +287,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* Actions (signal-ordered) */}
+          {/* Actions */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Actions</h3>
             <div className="flex flex-wrap gap-2">{actionButtons}</div>

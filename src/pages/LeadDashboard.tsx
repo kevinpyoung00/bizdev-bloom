@@ -6,18 +6,36 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send, Check } from 'lucide-react';
 import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine';
 import { useCOIQueue } from '@/hooks/useCOIEngine';
-import { signalSummary, getStars, starsDisplay, starsColor, starsLabel } from '@/lib/leadPriority';
+import {
+  signalSummary, getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
+  getPriorityLabel, priorityBadgeColor
+} from '@/lib/leadPriority';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCrm } from '@/store/CrmContext';
 import type { RolePersona } from '@/types/crm';
 
-function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
-  return <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>;
+function DualStarsBadge({ lead }: { lead: any }) {
+  const signalStars = getSignalStars(lead.reason, lead.account.triggers);
+  const reachStars = computeReachStars(undefined, lead.reason);
+  const priority = getPriorityLabel(signalStars);
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <span className="text-sm font-bold tracking-wide" style={{ color: '#FFA500' }} title={`Signals: ${signalStars}`}>
+        {signalStarsDisplay(signalStars)}
+      </span>
+      <span className="text-xs font-bold tracking-wide" style={{ color: '#1E90FF' }} title={`Reach: ${reachStars}`}>
+        {reachStarsDisplay(reachStars)}
+      </span>
+      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 mt-0.5 ${priorityBadgeColor(priority)}`}>
+        {priority.toUpperCase()}
+      </Badge>
+    </div>
+  );
 }
 
 export default function LeadDashboard() {
@@ -40,11 +58,8 @@ export default function LeadDashboard() {
   };
 
   const toggleAll = () => {
-    if (selectedIds.size === top10.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(top10.map(l => l.id)));
-    }
+    if (selectedIds.size === top10.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(top10.map(l => l.id)));
   };
 
   const allSelected = top10.length > 0 && selectedIds.size === top10.length;
@@ -53,7 +68,6 @@ export default function LeadDashboard() {
     if (leads.length === 0) { toast.info('No leads to export'); return; }
     setExporting(true);
     try {
-      // Fetch contacts for all lead accounts
       const accountIds = leads.map(l => l.account.id);
       const { data: contacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
       const contactsByAccount = new Map<string, any[]>();
@@ -69,13 +83,12 @@ export default function LeadDashboard() {
         if (acctContacts.length === 0) {
           rows.push({
             Rank: lead.priority_rank,
-            Score: lead.score,
-            Company: lead.account.name,
-            Domain: lead.account.domain || '',
-            Industry: lead.account.industry || '',
-            Employees: lead.account.employee_count || '',
-            City: lead.account.hq_city || '',
-            State: lead.account.hq_state || '',
+            'Signal Stars': getSignalStars(lead.reason, lead.account.triggers),
+            'Reach Stars': computeReachStars(undefined, lead.reason),
+            Priority: getPriorityLabel(getSignalStars(lead.reason, lead.account.triggers)),
+            Company: lead.account.name, Domain: lead.account.domain || '',
+            Industry: lead.account.industry || '', Employees: lead.account.employee_count || '',
+            City: lead.account.hq_city || '', State: lead.account.hq_state || '',
             Region: lead.account.geography_bucket || '',
             'Contact First': '', 'Contact Last': '', Title: '', Email: '', Phone: '', LinkedIn: '',
           });
@@ -83,13 +96,12 @@ export default function LeadDashboard() {
           for (const c of acctContacts) {
             rows.push({
               Rank: lead.priority_rank,
-              Score: lead.score,
-              Company: lead.account.name,
-              Domain: lead.account.domain || '',
-              Industry: lead.account.industry || '',
-              Employees: lead.account.employee_count || '',
-              City: lead.account.hq_city || '',
-              State: lead.account.hq_state || '',
+              'Signal Stars': getSignalStars(lead.reason, lead.account.triggers),
+              'Reach Stars': computeReachStars(undefined, lead.reason),
+              Priority: getPriorityLabel(getSignalStars(lead.reason, lead.account.triggers)),
+              Company: lead.account.name, Domain: lead.account.domain || '',
+              Industry: lead.account.industry || '', Employees: lead.account.employee_count || '',
+              City: lead.account.hq_city || '', State: lead.account.hq_state || '',
               Region: lead.account.geography_bucket || '',
               'Contact First': c.first_name, 'Contact Last': c.last_name,
               Title: c.title || '', Email: c.email || '', Phone: c.phone || '',
@@ -153,9 +165,18 @@ export default function LeadDashboard() {
     }
   };
 
+  // Count stars distribution for stats
+  const starCounts = { high: 0, medium: 0, low: 0 };
+  for (const lead of leads) {
+    const s = getSignalStars(lead.reason, lead.account.triggers);
+    if (s === 3) starCounts.high++;
+    else if (s === 2) starCounts.medium++;
+    else starCounts.low++;
+  }
+
   const tiles = [
     { label: "Today's 50", value: stats?.total?.toString() || '0', icon: Target, color: 'text-primary' },
-    { label: 'Avg Priority Score', value: stats?.avg?.toString() || '—', icon: TrendingUp, color: 'text-primary' },
+    { label: '★★★ High', value: starCounts.high.toString(), icon: TrendingUp, color: 'text-orange-500' },
     { label: 'MA', value: stats?.ma?.toString() || '0', icon: MapPin, color: 'text-primary' },
     { label: 'NE', value: stats?.ne?.toString() || '0', icon: MapPin, color: 'text-primary' },
     { label: 'National', value: stats?.us?.toString() || '0', icon: Globe, color: 'text-primary' },
@@ -165,19 +186,13 @@ export default function LeadDashboard() {
   return (
     <Layout>
       <div className="p-6 space-y-6">
-        {/* Header: Title + subtitle spanning full width */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Lead Engine Dashboard</h1>
-          <p className="text-sm text-muted-foreground">MA-first daily lead generation — Priority Outreach Score · {leads.length} leads scored today</p>
+          <p className="text-sm text-muted-foreground">MA-first daily lead generation — Signal & Reachability Stars · {leads.length} leads scored today</p>
         </div>
 
-        {/* Action buttons row */}
         <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={() => runScoring.mutate(false)}
-            disabled={runScoring.isPending}
-          >
+          <Button size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
             {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Play size={16} className="mr-1" />}
             Run Scoring Now
           </Button>
@@ -191,7 +206,6 @@ export default function LeadDashboard() {
           </Button>
         </div>
 
-        {/* Stats tiles */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {tiles.map(tile => (
             <Card key={tile.label}>
@@ -206,7 +220,6 @@ export default function LeadDashboard() {
           ))}
         </div>
 
-        {/* Top 10 leads table */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Top 10 Leads</CardTitle>
@@ -229,7 +242,7 @@ export default function LeadDashboard() {
                       <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
                     </TableHead>
                     <TableHead className="w-14">#</TableHead>
-                    <TableHead className="w-16">Priority</TableHead>
+                    <TableHead className="w-28">Priority</TableHead>
                     <TableHead>Company</TableHead>
                     <TableHead>Industry</TableHead>
                     <TableHead className="w-20">Emp.</TableHead>
@@ -248,7 +261,7 @@ export default function LeadDashboard() {
                         <Checkbox checked={selectedIds.has(lead.id)} onCheckedChange={() => toggleSelect(lead.id)} aria-label={`Select ${lead.account.name}`} />
                       </TableCell>
                       <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
-                      <TableCell><StarsBadge stars={getStars(lead.reason, lead.account.triggers)} /></TableCell>
+                      <TableCell><DualStarsBadge lead={lead} /></TableCell>
                       <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground truncate max-w-[140px]">{lead.account.industry || '—'}</TableCell>
                       <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>

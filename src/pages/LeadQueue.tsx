@@ -11,16 +11,29 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import AccountDrawer from '@/components/lead-engine/AccountDrawer';
-import { getStars, starsDisplay, starsColor, starsLabel, signalSummary } from '@/lib/leadPriority';
+import {
+  getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
+  getPriorityLabel, priorityBadgeColor, signalSummary
+} from '@/lib/leadPriority';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useCrm } from '@/store/CrmContext';
-import { createEmptyWeekProgress } from '@/types/crm';
 
-function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
+function DualStarsBadge({ lead }: { lead: LeadWithAccount }) {
+  const signalStars = getSignalStars(lead.reason, lead.account.triggers);
+  const reachStars = computeReachStars(undefined, lead.reason);
+  const priority = getPriorityLabel(signalStars);
   return (
-    <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>
-      {starsDisplay(stars)}
-    </span>
+    <div className="flex flex-col items-start gap-0.5">
+      <span className="text-sm font-bold tracking-wide" style={{ color: '#FFA500' }} title={`Signals: ${signalStars}`}>
+        {signalStarsDisplay(signalStars)}
+      </span>
+      <span className="text-xs font-bold tracking-wide" style={{ color: '#1E90FF' }} title={`Reach: ${reachStars}`}>
+        {reachStarsDisplay(reachStars)}
+      </span>
+      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 mt-0.5 ${priorityBadgeColor(priority)}`}>
+        {priority.toUpperCase()}
+      </Badge>
+    </div>
   );
 }
 
@@ -37,7 +50,10 @@ function DispositionCell({ disposition }: { disposition: string }) {
 
 async function exportLeadsCsv(leads: LeadWithAccount[]) {
   const rows = leads.map((l) => ({
-    Rank: l.priority_rank, Score: l.score, Stars: getStars(l.reason, l.account.triggers),
+    Rank: l.priority_rank,
+    'Signal Stars': getSignalStars(l.reason, l.account.triggers),
+    'Reach Stars': computeReachStars(undefined, l.reason),
+    Priority: getPriorityLabel(getSignalStars(l.reason, l.account.triggers)),
     Company: l.account.name, Domain: l.account.domain || '', Industry: l.account.industry || '',
     Employees: l.account.employee_count || '', City: l.account.hq_city || '',
     State: l.account.hq_state || '', Region: l.account.geography_bucket || '',
@@ -86,11 +102,8 @@ export default function LeadQueue() {
   };
 
   const toggleAll = () => {
-    if (selectedIds.size === leads.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(leads.map(l => l.id)));
-    }
+    if (selectedIds.size === leads.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(leads.map(l => l.id)));
   };
 
   const allSelected = leads.length > 0 && selectedIds.size === leads.length;
@@ -100,87 +113,33 @@ export default function LeadQueue() {
     if (targetIds.length === 0) { toast.info('No leads selected'); return; }
     setPushing(true);
     try {
-      // Get the selected leads
       const selectedLeads = leads.filter(l => targetIds.includes(l.id));
       const accountIds = selectedLeads.map(l => l.account.id);
+      const { data: leContacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
 
-      // Fetch contacts_le for these accounts
-      const { data: leContacts } = await supabase
-        .from('contacts_le')
-        .select('*')
-        .in('account_id', accountIds);
-
-      // Create CRM contacts from lead engine contacts
       let created = 0;
       for (const lead of selectedLeads) {
         const acctContacts = (leContacts || []).filter(c => c.account_id === lead.account.id);
-
         if (acctContacts.length === 0) {
-          // No contacts_le — create a placeholder contact from the account
-          const existsAlready = crmContacts.some(
-            c => c.company.toLowerCase() === lead.account.name.toLowerCase() && c.email === ''
-          );
+          const existsAlready = crmContacts.some(c => c.company.toLowerCase() === lead.account.name.toLowerCase() && c.email === '');
           if (!existsAlready) {
             const today = new Date().toISOString().split('T')[0];
-            addContact({
-              firstName: lead.account.name.split(' ')[0] || 'Unknown',
-              lastName: lead.account.name.split(' ').slice(1).join(' ') || 'Contact',
-              company: lead.account.name,
-              title: '',
-              rolePersona: 'Other',
-              industry: lead.account.industry || '',
-              employeeCount: lead.account.employee_count?.toString() || '',
-              email: '',
-              linkedInUrl: '',
-              phone: '',
-              source: 'ZoomInfo',
-              renewalMonth: '',
-              campaignId: '',
-              status: 'Unworked',
-              startDate: today,
-              notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}`,
-            });
+            addContact({ firstName: lead.account.name.split(' ')[0] || 'Unknown', lastName: lead.account.name.split(' ').slice(1).join(' ') || 'Contact', company: lead.account.name, title: '', rolePersona: 'Other', industry: lead.account.industry || '', employeeCount: lead.account.employee_count?.toString() || '', email: '', linkedInUrl: '', phone: '', source: 'ZoomInfo', renewalMonth: '', campaignId: '', status: 'Unworked', startDate: today, notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}` });
             created++;
           }
         } else {
           for (const c of acctContacts) {
-            // Skip if a CRM contact with same email already exists
-            const existsAlready = c.email && crmContacts.some(
-              crm => crm.email.toLowerCase() === c.email!.toLowerCase()
-            );
+            const existsAlready = c.email && crmContacts.some(crm => crm.email.toLowerCase() === c.email!.toLowerCase());
             if (existsAlready) continue;
-
             const today = new Date().toISOString().split('T')[0];
-            addContact({
-              firstName: c.first_name,
-              lastName: c.last_name,
-              company: lead.account.name,
-              title: c.title || '',
-              rolePersona: mapRolePersona(c.title, c.department),
-              industry: lead.account.industry || '',
-              employeeCount: lead.account.employee_count?.toString() || '',
-              email: c.email || '',
-              linkedInUrl: c.linkedin_url || '',
-              phone: c.phone || '',
-              source: 'ZoomInfo',
-              renewalMonth: '',
-              campaignId: '',
-              status: 'Unworked',
-              startDate: today,
-              notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}`,
-            });
+            addContact({ firstName: c.first_name, lastName: c.last_name, company: lead.account.name, title: c.title || '', rolePersona: mapRolePersona(c.title, c.department), industry: lead.account.industry || '', employeeCount: lead.account.employee_count?.toString() || '', email: c.email || '', linkedInUrl: c.linkedin_url || '', phone: c.phone || '', source: 'ZoomInfo', renewalMonth: '', campaignId: '', status: 'Unworked', startDate: today, notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}` });
             created++;
           }
         }
       }
 
-      // Mark as pushed in lead_queue
-      const { error } = await supabase
-        .from('lead_queue')
-        .update({ status: 'pushed' } as any)
-        .in('id', targetIds);
+      const { error } = await supabase.from('lead_queue').update({ status: 'pushed' } as any).in('id', targetIds);
       if (error) throw error;
-
       toast.success(`Pushed ${selectedLeads.length} lead${selectedLeads.length > 1 ? 's' : ''} → ${created} contact${created !== 1 ? 's' : ''} added to CRM`);
       setSelectedIds(new Set());
     } catch (e: any) {
@@ -197,7 +156,7 @@ export default function LeadQueue() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Lead Queue</h1>
             <p className="text-sm text-muted-foreground">
-              Today's ranked leads — {leads.length} companies scored by Priority Outreach Score
+              Today's ranked leads — {leads.length} companies prioritized by Signal & Reachability Stars
             </p>
           </div>
           <div className="flex gap-2">
@@ -227,7 +186,7 @@ export default function LeadQueue() {
                     <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
                   </TableHead>
                   <TableHead className="w-14">Rank</TableHead>
-                  <TableHead className="w-20">Priority</TableHead>
+                  <TableHead className="w-28">Priority</TableHead>
                   <TableHead>Company</TableHead>
                   <TableHead>Industry</TableHead>
                   <TableHead className="w-20">Emp.</TableHead>
@@ -245,7 +204,6 @@ export default function LeadQueue() {
                 ) : (
                   leads.map((lead) => {
                     const disposition = lead.account.disposition || 'active';
-                    const stars = getStars(lead.reason, lead.account.triggers);
                     return (
                       <TableRow
                         key={lead.id}
@@ -256,7 +214,7 @@ export default function LeadQueue() {
                           <Checkbox checked={selectedIds.has(lead.id)} onCheckedChange={() => toggleSelect(lead.id)} aria-label={`Select ${lead.account.name}`} />
                         </TableCell>
                         <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
-                        <TableCell><StarsBadge stars={stars} /></TableCell>
+                        <TableCell><DualStarsBadge lead={lead} /></TableCell>
                         <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{lead.account.industry || '—'}</TableCell>
                         <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
@@ -282,7 +240,6 @@ export default function LeadQueue() {
   );
 }
 
-/** Map a title/department string to a CRM RolePersona */
 function mapRolePersona(title?: string | null, department?: string | null): import('@/types/crm').RolePersona {
   const t = `${(title || '').toLowerCase()} ${(department || '').toLowerCase()}`;
   if (t.includes('ceo') || t.includes('chief executive')) return 'CEO';
