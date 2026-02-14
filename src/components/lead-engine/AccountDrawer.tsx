@@ -54,24 +54,17 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   if (!lead) return null;
   const { account, score, reason, priority_rank } = lead;
   const rawReason = reason || {};
-  // Normalize old field names (industry_fit, size_fit, geo_fit, bonus) to new names
   const r = {
-    industry: rawReason.industry ?? rawReason.industry_fit ?? 0,
-    size: rawReason.size ?? rawReason.size_fit ?? 0,
     hiring: rawReason.hiring ?? 0,
     c_suite: rawReason.c_suite ?? 0,
     recent_role_change: rawReason.recent_role_change ?? 0,
     funding: rawReason.funding ?? 0,
     reachability: rawReason.reachability ?? rawReason.bonus ?? 0,
-    raw: rawReason.raw ?? null,
-    normalized: rawReason.normalized ?? null,
     guardrail: rawReason.guardrail ?? null,
     signals: rawReason.signals ?? null,
     stars: rawReason.stars ?? null,
   };
-  // Compute raw/normalized if not stored
-  const computedRaw = r.raw ?? (r.industry + r.size + r.hiring + r.c_suite + r.recent_role_change + r.funding + r.reachability);
-  const computedNormalized = r.normalized ?? Math.min(100, Math.round((computedRaw / 110) * 1000) / 10);
+  const computedScore = r.hiring + r.c_suite + r.recent_role_change + r.funding + r.reachability;
   const disposition = account.disposition || 'active';
   const stars = getStars(r, account.triggers);
   const signals = signalDetails(account.triggers);
@@ -161,10 +154,9 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           {isBlocked && (
             <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-lg p-3">
               <AlertCircle size={16} className="text-destructive shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-destructive">Score blocked by guardrail</p>
-                <p className="text-xs text-destructive/80">{r.guardrail?.replace(/_/g, ' ')}</p>
-              </div>
+              <p className="text-sm font-medium text-destructive">
+                {r.guardrail?.includes('domain') ? 'Score withheld: missing domain/website' : 'Score withheld: disposition is rejected/suppressed'}
+              </p>
             </div>
           )}
 
@@ -222,32 +214,19 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Priority Outreach Breakdown</h3>
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Fit (0–40)</p>
-              <ScoreBar label="Industry" value={r.industry ?? 0} max={20} />
-              <ScoreBar label="Size" value={r.size ?? 0} max={20} />
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mt-3">Timing (0–60)</p>
-              <ScoreBar label="Hiring" value={r.hiring ?? 0} max={25} />
-              <ScoreBar label="C-Suite Movement" value={r.c_suite ?? 0} max={20} />
-              <ScoreBar label="Recent Role Change" value={r.recent_role_change ?? 0} max={10} />
-              <ScoreBar label="Funding / Expansion" value={r.funding ?? 0} max={5} />
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mt-3">Reachability (0–10)</p>
-              <ScoreBar label="Contact Data" value={r.reachability ?? 0} max={10} />
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Timing (0–65)</p>
+              <ScoreBar label="Hiring" value={r.hiring ?? 0} max={30} />
+              <ScoreBar label="Role Change (HR)" value={r.recent_role_change ?? 0} max={25} />
+              <ScoreBar label="Funding / Expansion" value={r.funding ?? 0} max={10} />
+              <ScoreBar label="C-Suite Movement" value={r.c_suite ?? 0} max={5} />
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mt-3">Reachability (0–30)</p>
+              <ScoreBar label="Contact Data" value={r.reachability ?? 0} max={30} />
               <Separator className="my-2" />
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Raw / Normalized</span>
-                <span className="font-bold text-foreground">{computedRaw} / 110 → {computedNormalized}</span>
+                <span className="text-muted-foreground">Total Score</span>
+                <span className="font-bold text-foreground">{Math.min(100, computedScore)} / 100</span>
               </div>
             </div>
-          </div>
-
-          <Separator />
-
-          {/* Reasons JSON */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Reasons (raw)</h3>
-            <pre className="text-xs bg-secondary p-2 rounded-md overflow-x-auto text-muted-foreground max-h-40 overflow-y-auto">
-              {JSON.stringify(r, null, 2)}
-            </pre>
           </div>
 
           <Separator />
