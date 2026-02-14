@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAccountContacts, useUpdateDisposition } from '@/hooks/useLeadEngine';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
-import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertTriangle, ShieldX, AlertCircle } from 'lucide-react';
+import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { getStars, starsDisplay, starsColor, starsLabel, signalDetails, getActionOrder } from '@/lib/leadPriority';
@@ -41,6 +41,24 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
   );
 }
 
+function TriggerChip({ label, active }: { label: string; active: boolean }) {
+  return (
+    <Badge variant={active ? 'default' : 'outline'} className={`text-xs ${!active ? 'opacity-40' : ''}`}>
+      {label}
+    </Badge>
+  );
+}
+
+function ContactChannel({ label, icon: Icon, active }: { label: string; icon: any; active: boolean }) {
+  return (
+    <div className={`flex items-center gap-1.5 text-xs ${active ? 'text-primary font-medium' : 'text-muted-foreground opacity-50'}`}>
+      <Icon size={12} />
+      <span>{label}</span>
+      <span className="font-medium">{active ? '+10' : '0'}</span>
+    </div>
+  );
+}
+
 export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawerProps) {
   const { data: contacts = [] } = useAccountContacts(lead?.account?.id || null);
   const generateBrief = useGenerateBrief();
@@ -54,23 +72,23 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   if (!lead) return null;
   const { account, score, reason, priority_rank } = lead;
   const rawReason = reason || {};
-  const r = {
-    hiring: rawReason.hiring ?? 0,
-    c_suite: rawReason.c_suite ?? 0,
-    recent_role_change: rawReason.recent_role_change ?? 0,
-    funding: rawReason.funding ?? 0,
-    reachability: rawReason.reachability ?? rawReason.bonus ?? 0,
-    guardrail: rawReason.guardrail ?? null,
-    signals: rawReason.signals ?? null,
-    stars: rawReason.stars ?? null,
-  };
-  const computedScore = r.hiring + r.c_suite + r.recent_role_change + r.funding + r.reachability;
+
+  // New model fields
+  const triggersFired = rawReason.triggers_fired ?? { hiring: false, role_change: false, funding: false, csuite: false };
+  const triggerCount = rawReason.trigger_count ?? [triggersFired.hiring, triggersFired.role_change, triggersFired.funding, triggersFired.csuite].filter(Boolean).length;
+  const triggerPoints = rawReason.trigger_points ?? (triggerCount >= 4 ? 70 : triggerCount === 3 ? 60 : triggerCount === 2 ? 50 : triggerCount === 1 ? 40 : 0);
+  const contactLinkedin = rawReason.contact_linkedin ?? 0;
+  const contactEmail = rawReason.contact_email ?? 0;
+  const contactPhone = rawReason.contact_phone ?? 0;
+  const contactPoints = rawReason.contact_points ?? Math.min(30, contactLinkedin + contactEmail + contactPhone);
+  const totalScore = rawReason.total ?? Math.min(100, triggerPoints + contactPoints);
+  const guardrail = rawReason.guardrail ?? null;
+
   const disposition = account.disposition || 'active';
-  const stars = getStars(r, account.triggers);
+  const stars = getStars(rawReason, account.triggers);
   const signals = signalDetails(account.triggers);
   const actionOrder = getActionOrder(account.triggers);
-
-  const isBlocked = !!r.guardrail;
+  const isBlocked = !!guardrail;
 
   const handleGenerateBrief = async () => {
     try {
@@ -155,7 +173,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-lg p-3">
               <AlertCircle size={16} className="text-destructive shrink-0" />
               <p className="text-sm font-medium text-destructive">
-                {r.guardrail?.includes('domain') ? 'Score withheld: missing domain/website' : 'Score withheld: disposition is rejected/suppressed'}
+                {guardrail?.includes('domain') ? 'Score withheld: missing domain/website' : 'Score withheld: disposition is rejected/suppressed'}
               </p>
             </div>
           )}
@@ -213,18 +231,37 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           {/* Priority Outreach Breakdown */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Priority Outreach Breakdown</h3>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Timing (0–65)</p>
-              <ScoreBar label="Hiring" value={r.hiring ?? 0} max={30} />
-              <ScoreBar label="Role Change (HR)" value={r.recent_role_change ?? 0} max={25} />
-              <ScoreBar label="Funding / Expansion" value={r.funding ?? 0} max={10} />
-              <ScoreBar label="C-Suite Movement" value={r.c_suite ?? 0} max={5} />
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mt-3">Reachability (0–30)</p>
-              <ScoreBar label="Contact Data" value={r.reachability ?? 0} max={30} />
-              <Separator className="my-2" />
+            <div className="space-y-3">
+              {/* Triggers section */}
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-2">Triggers ({triggerCount} fired → {triggerPoints}/70)</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  <TriggerChip label="Hiring" active={triggersFired.hiring} />
+                  <TriggerChip label="HR Role Change" active={triggersFired.role_change} />
+                  <TriggerChip label="Funding" active={triggersFired.funding} />
+                  <TriggerChip label="C-Suite" active={triggersFired.csuite} />
+                </div>
+                <ScoreBar label="Trigger Score" value={triggerPoints} max={70} />
+              </div>
+
+              <Separator className="my-1" />
+
+              {/* Contact Data section */}
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-2">Contact Data ({contactPoints}/30)</p>
+                <div className="flex flex-wrap gap-4 mb-2">
+                  <ContactChannel label="LinkedIn" icon={Linkedin} active={contactLinkedin > 0} />
+                  <ContactChannel label="Email" icon={Mail} active={contactEmail > 0} />
+                  <ContactChannel label="Phone" icon={Phone} active={contactPhone > 0} />
+                </div>
+                <ScoreBar label="Contact Score" value={contactPoints} max={30} />
+              </div>
+
+              <Separator className="my-1" />
+
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Total Score</span>
-                <span className="font-bold text-foreground">{Math.min(100, computedScore)} / 100</span>
+                <span className="font-bold text-foreground">{totalScore} / 100</span>
               </div>
             </div>
           </div>
