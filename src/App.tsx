@@ -10,7 +10,7 @@ import ContactDetail from "./pages/ContactDetail";
 import Today from "./pages/Today";
 import Pipeline from "./pages/Pipeline";
 import Campaigns from "./pages/Campaigns";
-import Templates from "./pages/Templates";
+// Templates removed — drip generation is now inline in Account Drawer
 import LeadDashboard from "./pages/LeadDashboard";
 import LeadQueue from "./pages/LeadQueue";
 import COIQueue from "./pages/COIQueue";
@@ -34,7 +34,7 @@ const App = () => (
             <Route path="/contacts/:id" element={<ContactDetail />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/campaigns" element={<Campaigns />} />
-            <Route path="/templates" element={<Templates />} />
+            {/* Templates route removed — drip inline */}
             <Route path="/leads" element={<LeadDashboard />} />
             <Route path="/lead-queue" element={<LeadQueue />} />
             <Route path="/coi-queue" element={<COIQueue />} />

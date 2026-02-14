@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.generate-email]
 verify_jwt = false
+
+[functions.generate-drip]
+verify_jwt = false
