@@ -271,10 +271,10 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
               <div>
                 <Label className="text-xs">Assign Campaign</Label>
-                <Select value={campaignId} onValueChange={setCampaignId}>
+                <Select value={campaignId || '__none__'} onValueChange={v => setCampaignId(v === '__none__' ? '' : v)}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {campaigns.filter(c => c.active).map(c => (
                       <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
