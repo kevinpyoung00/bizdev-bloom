@@ -3,10 +3,11 @@ import { useCrm } from '@/store/CrmContext';
 import Layout from '@/components/crm/Layout';
 import StatusBadge from '@/components/crm/StatusBadge';
 import ContactForm from '@/components/crm/ContactForm';
+import ImportContacts from '@/components/crm/ImportContacts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Download, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, Download, ArrowUpDown, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ContactStatus, getContactProgress } from '@/types/crm';
 
@@ -16,6 +17,7 @@ export default function Contacts() {
   const { contacts, campaigns } = useCrm();
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ContactStatus | 'All'>('All');
   const [campaignFilter, setCampaignFilter] = useState('All');
@@ -77,6 +79,7 @@ export default function Contacts() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={exportCsv}><Download size={16} className="mr-1" /> Export</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}><Upload size={16} className="mr-1" /> Import</Button>
             <Button size="sm" onClick={() => setShowForm(true)}><Plus size={16} className="mr-1" /> Add Contact</Button>
           </div>
         </div>
@@ -171,6 +174,7 @@ export default function Contacts() {
         </div>
 
         <ContactForm open={showForm} onOpenChange={setShowForm} />
+        <ImportContacts open={showImport} onOpenChange={setShowImport} />
       </div>
     </Layout>
   );
