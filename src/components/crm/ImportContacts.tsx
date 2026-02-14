@@ -210,7 +210,6 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
       const { firstName, lastName } = splitName(v.name);
 
       const noteParts: string[] = [];
-      if (effectiveTitle) noteParts.push(`List: ${effectiveTitle}`);
       if (v.notes) noteParts.push(v.notes);
 
       addContact({
