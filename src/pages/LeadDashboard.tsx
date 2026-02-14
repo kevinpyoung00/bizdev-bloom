@@ -6,12 +6,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send } from 'lucide-react';
 import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine';
 import { useCOIQueue } from '@/hooks/useCOIEngine';
-import { getTopTrigger } from '@/components/lead-engine/AccountDrawer';
+import { signalSummary, getStars, starsDisplay, starsColor, starsLabel } from '@/lib/leadPriority';
 import { Link } from 'react-router-dom';
 
-function ScoreBadge({ score }: { score: number }) {
-  const color = score >= 85 ? 'bg-success/15 text-success' : score >= 70 ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground';
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${color}`}>{score}</span>;
+function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
+  return <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>;
 }
 
 export default function LeadDashboard() {
@@ -101,12 +100,12 @@ export default function LeadDashboard() {
                   {top10.map((lead) => (
                     <TableRow key={lead.id}>
                       <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
-                      <TableCell><ScoreBadge score={lead.score} /></TableCell>
+                      <TableCell><StarsBadge stars={getStars(lead.reason, lead.account.triggers)} /></TableCell>
                       <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground truncate max-w-[140px]">{lead.account.industry || '—'}</TableCell>
                       <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
                       <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{getTopTrigger(lead.account.triggers)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{signalSummary(lead.account.triggers)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

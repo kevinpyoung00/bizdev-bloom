@@ -9,12 +9,16 @@ import { useLeadQueue, useRunScoring, useAccountContacts } from '@/hooks/useLead
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import AccountDrawer, { getTopTrigger } from '@/components/lead-engine/AccountDrawer';
+import AccountDrawer from '@/components/lead-engine/AccountDrawer';
+import { getStars, starsDisplay, starsColor, starsLabel, signalSummary } from '@/lib/leadPriority';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 
-function ScoreBadge({ score }: { score: number }) {
-  const color = score >= 85 ? 'bg-success/15 text-success' : score >= 70 ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground';
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${color}`}>{score}</span>;
+function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
+  return (
+    <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>
+      {starsDisplay(stars)}
+    </span>
+  );
 }
 
 function DispositionCell({ disposition }: { disposition: string }) {
@@ -30,17 +34,11 @@ function DispositionCell({ disposition }: { disposition: string }) {
 
 async function exportLeadsCsv(leads: LeadWithAccount[]) {
   const rows = leads.map((l) => ({
-    Rank: l.priority_rank,
-    Score: l.score,
-    Company: l.account.name,
-    Domain: l.account.domain || '',
-    Industry: l.account.industry || '',
-    Employees: l.account.employee_count || '',
-    City: l.account.hq_city || '',
-    State: l.account.hq_state || '',
-    Region: l.account.geography_bucket || '',
-    Disposition: (l.account as any).disposition || 'active',
-    Signal: getTopTrigger(l.account.triggers),
+    Rank: l.priority_rank, Score: l.score, Stars: getStars(l.reason, l.account.triggers),
+    Company: l.account.name, Domain: l.account.domain || '', Industry: l.account.industry || '',
+    Employees: l.account.employee_count || '', City: l.account.hq_city || '',
+    State: l.account.hq_state || '', Region: l.account.geography_bucket || '',
+    Disposition: l.account.disposition || 'active', Signal: signalSummary(l.account.triggers),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -54,15 +52,9 @@ async function exportContactsCsv(leads: LeadWithAccount[]) {
   const { data: contacts } = await supabase.from('contacts_le').select('*, accounts(name, domain)').in('account_id', accountIds);
   if (!contacts || contacts.length === 0) { toast.info('No contacts to export'); return; }
   const rows = contacts.map((c: any) => ({
-    'First Name': c.first_name,
-    'Last Name': c.last_name,
-    Title: c.title || '',
-    Department: c.department || '',
-    Email: c.email || '',
-    Phone: c.phone || '',
-    LinkedIn: c.linkedin_url || '',
-    Company: c.accounts?.name || '',
-    Domain: c.accounts?.domain || '',
+    'First Name': c.first_name, 'Last Name': c.last_name, Title: c.title || '',
+    Department: c.department || '', Email: c.email || '', Phone: c.phone || '',
+    LinkedIn: c.linkedin_url || '', Company: c.accounts?.name || '', Domain: c.accounts?.domain || '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -77,10 +69,7 @@ export default function LeadQueue() {
   const [selectedLead, setSelectedLead] = useState<LeadWithAccount | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const handleView = (lead: LeadWithAccount) => {
-    setSelectedLead(lead);
-    setDrawerOpen(true);
-  };
+  const handleView = (lead: LeadWithAccount) => { setSelectedLead(lead); setDrawerOpen(true); };
 
   return (
     <Layout>
@@ -93,12 +82,7 @@ export default function LeadQueue() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => runScoring.mutate(false)}
-              disabled={runScoring.isPending}
-            >
+            <Button variant="outline" size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
               {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : null}
               Run Scoring
             </Button>
@@ -108,9 +92,7 @@ export default function LeadQueue() {
             <Button variant="outline" size="sm" onClick={() => exportContactsCsv(leads)}>
               <Download size={16} className="mr-1" /> Export Contacts
             </Button>
-            <Button size="sm">
-              <Send size={16} className="mr-1" /> Push All to CRM
-            </Button>
+            <Button size="sm"><Send size={16} className="mr-1" /> Push All to CRM</Button>
           </div>
         </div>
 
@@ -120,9 +102,8 @@ export default function LeadQueue() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-14">Rank</TableHead>
-                  <TableHead className="w-16">Priority</TableHead>
+                  <TableHead className="w-20">Priority</TableHead>
                   <TableHead>Company</TableHead>
-                  <TableHead>Domain</TableHead>
                   <TableHead>Industry</TableHead>
                   <TableHead className="w-20">Emp.</TableHead>
                   <TableHead className="w-16">Region</TableHead>
@@ -133,36 +114,22 @@ export default function LeadQueue() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
-                      <Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
                 ) : leads.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
-                      No leads yet. Click "Run Scoring" to generate today's queue.
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No leads yet. Click "Run Scoring" to generate today's queue.</TableCell></TableRow>
                 ) : (
                   leads.map((lead) => {
-                    const disposition = (lead.account as any).disposition || 'active';
+                    const disposition = lead.account.disposition || 'active';
+                    const stars = getStars(lead.reason, lead.account.triggers);
                     return (
-                      <TableRow
-                        key={lead.id}
-                        className="cursor-pointer"
-                        onClick={() => handleView(lead)}
-                      >
+                      <TableRow key={lead.id} className="cursor-pointer" onClick={() => handleView(lead)}>
                         <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
-                        <TableCell><ScoreBadge score={lead.score} /></TableCell>
+                        <TableCell><StarsBadge stars={stars} /></TableCell>
                         <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{lead.account.domain || '—'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{lead.account.industry || '—'}</TableCell>
                         <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{getTopTrigger(lead.account.triggers)}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{signalSummary(lead.account.triggers)}</TableCell>
                         <TableCell><DispositionCell disposition={disposition} /></TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); handleView(lead); }}>
@@ -178,7 +145,6 @@ export default function LeadQueue() {
           </CardContent>
         </Card>
       </div>
-
       <AccountDrawer lead={selectedLead} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </Layout>
   );

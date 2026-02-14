@@ -17,25 +17,17 @@ const INDUSTRY_SCORES: Record<string, number> = {
 };
 
 const INDUSTRY_KEYWORDS: [string, number][] = [
-  ["health", 18],
-  ["biotech", 17],
-  ["life sci", 17],
-  ["pharma", 16],
-  ["professional", 14],
-  ["technical", 14],
-  ["engineering", 14],
-  ["manufactur", 12],
-  ["medical device", 14],
-  ["education", 10],
-  ["nonprofit", 10],
-  ["university", 10],
+  ["health", 18], ["biotech", 17], ["life sci", 17], ["pharma", 16],
+  ["professional", 14], ["technical", 14], ["engineering", 14],
+  ["manufactur", 12], ["medical device", 14],
+  ["education", 10], ["nonprofit", 10], ["university", 10],
 ];
 
 const INDUSTRY_DEPRIORITIZE = [
   "restaurants", "small retail", "seasonal staffing", "staffing agencies",
 ];
 
-// ─── Geography helpers (gate, not scored) ───
+// ─── Geography helpers ───
 
 function normalizeState(s: string | null): string {
   if (!s) return "";
@@ -50,10 +42,21 @@ function getGeoBucket(state: string): "MA" | "NE" | "US" {
   return "US";
 }
 
+// ─── Domain derivation ───
+
+function deriveDomain(domain: string | null, website: string | null): string | null {
+  if (domain) return domain;
+  if (!website) return null;
+  try {
+    const url = website.startsWith("http") ? website : `https://${website}`;
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch { return null; }
+}
+
 // ─── Fit scoring (0–40) ───
 
 function scoreIndustry(industry: string | null): number {
-  if (!industry) return 0;
+  if (!industry) return 3; // non-zero floor
   const lower = industry.toLowerCase();
   for (const dep of INDUSTRY_DEPRIORITIZE) {
     if (lower.includes(dep)) return 2;
@@ -64,13 +67,25 @@ function scoreIndustry(industry: string | null): number {
   for (const [kw, score] of INDUSTRY_KEYWORDS) {
     if (lower.includes(kw)) return score;
   }
-  return 5;
+  return 5; // non-zero floor for unknown
+}
+
+function parseEmployeeCount(raw: any): number | null {
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string") {
+    // Handle ranges like "50-100" or "50 - 100"
+    const rangeMatch = raw.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (rangeMatch) return Math.round((parseInt(rangeMatch[1]) + parseInt(rangeMatch[2])) / 2);
+    const num = parseInt(raw.replace(/,/g, ""));
+    if (!isNaN(num)) return num;
+  }
+  return null;
 }
 
 function scoreSize(empCount: number | null): number {
   if (!empCount || empCount <= 0) return 0;
   if (empCount >= 50 && empCount <= 250) return 20;
-  if (empCount >= 25 && empCount < 50) return 12; // may get growth bonus via hiring
+  if (empCount >= 25 && empCount < 50) return 12;
   if (empCount > 250 && empCount <= 500) return 14;
   if (empCount > 500 && empCount <= 1000) return 6;
   if (empCount > 1000) return 2;
@@ -83,7 +98,9 @@ function scoreHiring(triggers: any): number {
   if (!triggers) return 0;
   const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
   if (openRoles >= 10) return 25;
-  if (openRoles > 0) return Math.min(20, Math.round((openRoles / 10) * 20));
+  if (openRoles >= 6) return 20;
+  if (openRoles >= 3) return 12;
+  if (openRoles > 0) return Math.min(10, Math.round((openRoles / 10) * 20));
   return 0;
 }
 
@@ -91,14 +108,31 @@ function scoreCsuite(triggers: any): number {
   if (!triggers) return 0;
   const changes = triggers.c_suite_changes ?? triggers.leadership_changes;
   if (!changes) return 0;
+
+  // Determine role type and recency
   const monthsAgo = changes.months_ago ?? changes.recency_months ?? null;
+  const title = (changes.title || changes.role || "").toLowerCase();
+
+  // Role-based max scores
+  let maxScore = 12; // unknown role default
+  if (title.includes("cfo") || title.includes("chief financial") ||
+      title.includes("chro") || title.includes("chief human") ||
+      title.includes("vp people") || title.includes("vp hr") ||
+      title.includes("head of people") || title.includes("head of hr")) {
+    maxScore = 20;
+  } else if (title.includes("coo") || title.includes("chief operating") ||
+             title.includes("ceo") || title.includes("chief executive")) {
+    maxScore = 16;
+  }
+
   if (monthsAgo !== null && monthsAgo !== undefined) {
-    if (monthsAgo <= 3) return 20;
-    if (monthsAgo <= 6) return 12;
-    if (monthsAgo <= 12) return 6;
+    if (monthsAgo <= 3) return maxScore;
+    if (monthsAgo <= 6) return Math.round(maxScore / 2);
     return 0;
   }
-  if (changes === true || (typeof changes === "object" && Object.keys(changes).length > 0)) return 20;
+
+  // Boolean or object without recency — assume recent
+  if (changes === true || (typeof changes === "object" && Object.keys(changes).length > 0)) return maxScore;
   return 0;
 }
 
@@ -106,7 +140,6 @@ function scoreRecentRoleChange(triggers: any): number {
   if (!triggers) return 0;
   const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
   if (!rc) return 0;
-  // Expect { title, department, days_ago } or array
   const items = Array.isArray(rc) ? rc : [rc];
   const HR_KEYWORDS = ["hr", "human resources", "benefits", "people ops", "people operations", "finance", "controller", "payroll"];
   let best = 0;
@@ -118,8 +151,9 @@ function scoreRecentRoleChange(triggers: any): number {
     if (!isRelevant) continue;
     const daysAgo = item.days_ago ?? 999;
     if (daysAgo <= 14) best = Math.max(best, 10);
-    else if (daysAgo <= 30) best = Math.max(best, 7);
-    else if (daysAgo <= 60) best = Math.max(best, 4);
+    else if (daysAgo <= 30) best = Math.max(best, 6);
+    else if (daysAgo <= 60) best = Math.max(best, 3);
+    else if (daysAgo <= 180) best = Math.max(best, 1);
   }
   return best;
 }
@@ -128,7 +162,7 @@ function scoreFunding(triggers: any): number {
   if (!triggers) return 0;
   const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
   if (!funding) return 0;
-  if (typeof funding === "boolean" && funding) return 5;
+  if (typeof funding === "boolean" && funding) return 3;
   if (typeof funding === "object") {
     const recency = funding.months_ago ?? 12;
     if (recency <= 3) return 5;
@@ -158,6 +192,92 @@ function scoreReachability(contacts: any[]): number {
   return Math.min(10, pts);
 }
 
+// ─── Signal classification for star priority ───
+
+interface SignalSizes {
+  role_change_size: "large" | "medium" | "small" | null;
+  hiring_size: "large" | "medium" | "small" | null;
+  funding_size: "large" | "medium" | "small" | null;
+  csuite_size: "large" | "medium" | "small" | null;
+}
+
+function classifySignals(triggers: any): SignalSizes {
+  const result: SignalSizes = { role_change_size: null, hiring_size: null, funding_size: null, csuite_size: null };
+  if (!triggers) return result;
+
+  // Role change
+  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
+  if (rc) {
+    const items = Array.isArray(rc) ? rc : [rc];
+    const HR_KW = ["hr", "human resources", "benefits", "people ops", "people operations", "finance", "controller", "payroll"];
+    let bestDays = 999;
+    for (const item of items) {
+      const combined = `${(item.title || "").toLowerCase()} ${(item.department || "").toLowerCase()}`;
+      if (HR_KW.some((kw) => combined.includes(kw))) {
+        bestDays = Math.min(bestDays, item.days_ago ?? 999);
+      }
+    }
+    if (bestDays <= 14) result.role_change_size = "large";
+    else if (bestDays <= 60) result.role_change_size = "medium";
+    else if (bestDays <= 180) result.role_change_size = "small";
+  }
+
+  // Hiring
+  const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
+  if (openRoles >= 10) result.hiring_size = "large";
+  else if (openRoles >= 6) result.hiring_size = "medium";
+  else if (openRoles >= 3) result.hiring_size = "small";
+
+  // Funding
+  const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
+  if (funding) {
+    if (typeof funding === "boolean") {
+      result.funding_size = "medium";
+    } else if (typeof funding === "object") {
+      const mo = funding.months_ago ?? 12;
+      if (mo <= 3) result.funding_size = "large";
+      else if (mo <= 6) result.funding_size = "medium";
+      else if (mo <= 12) result.funding_size = "small";
+    } else {
+      result.funding_size = "small";
+    }
+  }
+
+  // C-suite
+  const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
+  if (cs) {
+    const mo = cs.months_ago ?? cs.recency_months ?? null;
+    if (mo !== null) {
+      if (mo <= 3) result.csuite_size = "large";
+      else if (mo <= 6) result.csuite_size = "medium";
+    } else if (cs === true || (typeof cs === "object" && Object.keys(cs).length > 0)) {
+      result.csuite_size = "medium";
+    }
+  }
+
+  return result;
+}
+
+function computeStars(signals: SignalSizes, reachability: number): 1 | 2 | 3 {
+  const sizes = [signals.role_change_size, signals.hiring_size, signals.funding_size, signals.csuite_size].filter(Boolean) as string[];
+  const largeCount = sizes.filter((s) => s === "large").length;
+  const mediumCount = sizes.filter((s) => s === "medium").length;
+  const smallCount = sizes.filter((s) => s === "small").length;
+  const reachReady = reachability >= 6;
+
+  // ★★★
+  if (largeCount >= 1) return 3;
+  if (mediumCount >= 2) return 3;
+  if (mediumCount >= 1 && reachReady) return 3;
+
+  // ★★
+  if (mediumCount >= 1) return 2;
+  if (smallCount >= 2) return 2;
+
+  // ★
+  return 1;
+}
+
 // ─── Main scoring ───
 
 interface PriorityReason {
@@ -171,6 +291,8 @@ interface PriorityReason {
   raw: number;
   normalized: number;
   guardrail: string | null;
+  signals: SignalSizes;
+  stars: 1 | 2 | 3;
 }
 
 interface ScoredAccount {
@@ -184,6 +306,7 @@ interface ScoredAccount {
   disposition: string;
   triggers: any;
   score: number;
+  stars: 1 | 2 | 3;
   reasons: PriorityReason;
 }
 
@@ -191,15 +314,17 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   const geoBucket = getGeoBucket(account.hq_state);
   const triggers = account.triggers || {};
   const disposition = account.disposition || "active";
+  const empCount = parseEmployeeCount(account.employee_count);
 
-  // Guardrails
+  // Domain/website guardrail: block only if BOTH missing
+  const resolvedDomain = deriveDomain(account.domain, account.website);
   let guardrail: string | null = null;
-  if (!account.domain) guardrail = "missing_domain";
+  if (!resolvedDomain && !account.website) guardrail = "missing_domain_and_website";
   if (disposition === "suppressed") guardrail = "suppressed";
   if (disposition?.startsWith("rejected_")) guardrail = `disposition_${disposition}`;
 
   const industry = guardrail ? 0 : scoreIndustry(account.industry);
-  const size = guardrail ? 0 : scoreSize(account.employee_count);
+  const size = guardrail ? 0 : scoreSize(empCount);
   const hiring = guardrail ? 0 : scoreHiring(triggers);
   const c_suite = guardrail ? 0 : scoreCsuite(triggers);
   const recent_role_change = guardrail ? 0 : scoreRecentRoleChange(triggers);
@@ -209,29 +334,33 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   const raw = industry + size + hiring + c_suite + recent_role_change + funding + reachability;
   const normalized = guardrail ? 0 : Math.min(100, Math.round((raw / 110) * 1000) / 10);
 
+  const signals = classifySignals(triggers);
+  const stars = guardrail ? 1 : computeStars(signals, reachability);
+
   return {
     id: account.id,
     name: account.name,
-    domain: account.domain,
+    domain: resolvedDomain,
     industry: account.industry,
-    employee_count: account.employee_count,
+    employee_count: empCount,
     hq_state: account.hq_state,
     geography_bucket: geoBucket,
     disposition,
     triggers,
     score: normalized,
-    reasons: { industry, size, hiring, c_suite, recent_role_change, funding, reachability, raw, normalized, guardrail },
+    stars,
+    reasons: { industry, size, hiring, c_suite, recent_role_change, funding, reachability, raw, normalized, guardrail, signals, stars },
   };
 }
 
 // ─── Selection with geography gates ───
 
 function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
-  // Only include active and needs_review
   const eligible = scored.filter((a) => a.disposition === "active" || a.disposition === "needs_review");
 
-  // Sort by score desc, tie-breakers: hiring → c_suite recency → reachability → size proximity to 150 → domain A-Z
+  // Sort by stars desc, then score desc, then tie-breakers
   const sorted = [...eligible].sort((a, b) => {
+    if (b.stars !== a.stars) return b.stars - a.stars;
     if (b.score !== a.score) return b.score - a.score;
     if (b.reasons.hiring !== a.reasons.hiring) return b.reasons.hiring - a.reasons.hiring;
     if (b.reasons.c_suite !== a.reasons.c_suite) return b.reasons.c_suite - a.reasons.c_suite;
@@ -249,52 +378,13 @@ function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
   const selected: ScoredAccount[] = [];
   const usedIds = new Set<string>();
 
-  // A) Top 45 MA
-  for (const a of maPool) {
-    if (selected.length >= 45) break;
-    selected.push(a);
-    usedIds.add(a.id);
-  }
-
-  // B) Up to 4 NE with score ≥ 85
+  for (const a of maPool) { if (selected.length >= 45) break; selected.push(a); usedIds.add(a.id); }
   let neCount = 0;
-  for (const a of nePool) {
-    if (neCount >= 4) break;
-    if (usedIds.has(a.id)) continue;
-    selected.push(a);
-    usedIds.add(a.id);
-    neCount++;
-  }
-
-  // C) Up to 1 National with score ≥ 90
+  for (const a of nePool) { if (neCount >= 4) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); neCount++; }
   let usCount = 0;
-  for (const a of usPool) {
-    if (usCount >= 1) break;
-    if (usedIds.has(a.id)) continue;
-    selected.push(a);
-    usedIds.add(a.id);
-    usCount++;
-  }
-
-  // D) Backfill with MA if < 50
-  if (selected.length < 50) {
-    for (const a of maPool) {
-      if (selected.length >= 50) break;
-      if (usedIds.has(a.id)) continue;
-      selected.push(a);
-      usedIds.add(a.id);
-    }
-  }
-
-  // E) Fill with any remaining eligible by score
-  if (selected.length < 50) {
-    for (const a of sorted) {
-      if (selected.length >= 50) break;
-      if (usedIds.has(a.id)) continue;
-      selected.push(a);
-      usedIds.add(a.id);
-    }
-  }
+  for (const a of usPool) { if (usCount >= 1) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); usCount++; }
+  if (selected.length < 50) { for (const a of maPool) { if (selected.length >= 50) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); } }
+  if (selected.length < 50) { for (const a of sorted) { if (selected.length >= 50) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); } }
 
   return selected.slice(0, 50);
 }
@@ -316,122 +406,59 @@ Deno.serve(async (req) => {
     let runDate = url.searchParams.get("run_date") || new Date().toISOString().split("T")[0];
 
     if (req.method === "POST") {
-      try {
-        const body = await req.json();
-        if (body.dry_run) dryRun = true;
-        if (body.run_date) runDate = body.run_date;
-      } catch { /* no body */ }
+      try { const body = await req.json(); if (body.dry_run) dryRun = true; if (body.run_date) runDate = body.run_date; } catch { /* no body */ }
     }
 
-    // Check if already run today
     if (!dryRun) {
-      const { data: existing } = await supabase
-        .from("lead_queue")
-        .select("id")
-        .eq("run_date", runDate)
-        .limit(1);
+      const { data: existing } = await supabase.from("lead_queue").select("id").eq("run_date", runDate).limit(1);
       if (existing && existing.length > 0) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: `Lead queue already generated for ${runDate}. Use dry_run=true to preview or delete existing rows first.`,
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
-        );
+        return new Response(JSON.stringify({ success: false, message: `Lead queue already generated for ${runDate}. Use dry_run=true to preview or delete existing rows first.` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 });
       }
     }
 
-    // Load all accounts (excluding suppressed via disposition)
-    const { data: accounts, error: accountsErr } = await supabase
-      .from("accounts")
-      .select("*");
-
+    const { data: accounts, error: accountsErr } = await supabase.from("accounts").select("*");
     if (accountsErr) throw accountsErr;
     if (!accounts || accounts.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, message: "No accounts to score.", leads: [], stats: {} }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ success: true, message: "No accounts to score.", leads: [], stats: {} }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Load all contacts for reachability scoring
     const { data: allContacts } = await supabase.from("contacts_le").select("*");
     const contactsByAccount = new Map<string, any[]>();
-    for (const c of allContacts || []) {
-      if (!c.account_id) continue;
-      if (!contactsByAccount.has(c.account_id)) contactsByAccount.set(c.account_id, []);
-      contactsByAccount.get(c.account_id)!.push(c);
-    }
+    for (const c of allContacts || []) { if (!c.account_id) continue; if (!contactsByAccount.has(c.account_id)) contactsByAccount.set(c.account_id, []); contactsByAccount.get(c.account_id)!.push(c); }
 
-    // Score all accounts
     const scored = accounts.map((a) => scoreAccount(a, contactsByAccount.get(a.id) || []));
 
-    // Update icp_score on each account
     if (!dryRun) {
       for (const s of scored) {
-        await supabase.from("accounts").update({
-          icp_score: Math.round(s.score),
-          geography_bucket: s.geography_bucket,
-        }).eq("id", s.id);
+        await supabase.from("accounts").update({ icp_score: Math.round(s.score), geography_bucket: s.geography_bucket }).eq("id", s.id);
       }
     }
 
-    // Select top 50 with geo gates
     const top50 = selectTop50(scored);
-
     const maCount = top50.filter((a) => a.geography_bucket === "MA").length;
     const neCount = top50.filter((a) => a.geography_bucket === "NE").length;
-    const usCount = top50.filter((a) => a.geography_bucket === "US").length;
+    const usCountFinal = top50.filter((a) => a.geography_bucket === "US").length;
     const avgScore = top50.length > 0 ? Math.round(top50.reduce((s, a) => s + a.score, 0) / top50.length) : 0;
 
-    // Write to lead_queue
     if (!dryRun && top50.length > 0) {
       const rows = top50.map((a, i) => ({
-        account_id: a.id,
-        run_date: runDate,
-        priority_rank: i + 1,
-        score: Math.round(a.score),
-        reason: a.reasons,
-        status: "pending",
+        account_id: a.id, run_date: runDate, priority_rank: i + 1, score: Math.round(a.score), reason: a.reasons, status: "pending",
       }));
-
       const { error: insertErr } = await supabase.from("lead_queue").insert(rows);
       if (insertErr) throw insertErr;
-
-      await supabase.from("audit_log").insert({
-        actor: "system",
-        action: "daily_lead_run",
-        entity_type: "lead_queue",
-        details: { run_date: runDate, total: top50.length, ma: maCount, ne: neCount, us: usCount, avg_score: avgScore },
-      });
+      await supabase.from("audit_log").insert({ actor: "system", action: "daily_lead_run", entity_type: "lead_queue", details: { run_date: runDate, total: top50.length, ma: maCount, ne: neCount, us: usCountFinal, avg_score: avgScore } });
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        dry_run: dryRun,
-        run_date: runDate,
-        stats: { total: top50.length, ma: maCount, ne: neCount, us: usCount, avg_score: avgScore, total_candidates: scored.length },
-        leads: top50.map((a, i) => ({
-          rank: i + 1,
-          score: a.score,
-          name: a.name,
-          domain: a.domain,
-          industry: a.industry,
-          employee_count: a.employee_count,
-          geography: a.geography_bucket,
-          state: a.hq_state,
-          disposition: a.disposition,
-          reasons: a.reasons,
-        })),
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({
+      success: true, dry_run: dryRun, run_date: runDate,
+      stats: { total: top50.length, ma: maCount, ne: neCount, us: usCountFinal, avg_score: avgScore, total_candidates: scored.length },
+      leads: top50.map((a, i) => ({ rank: i + 1, score: a.score, stars: a.stars, name: a.name, domain: a.domain, industry: a.industry, employee_count: a.employee_count, geography: a.geography_bucket, state: a.hq_state, disposition: a.disposition, reasons: a.reasons })),
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("Score leads error:", err);
-    return new Response(
-      JSON.stringify({ success: false, error: err.message }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-    );
+    return new Response(JSON.stringify({ success: false, error: err.message }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
   }
 });
