@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2 } from 'lucide-react';
+import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send } from 'lucide-react';
 import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine';
 import { useCOIQueue } from '@/hooks/useCOIEngine';
 import { getTopTrigger } from '@/components/lead-engine/AccountDrawer';
@@ -23,11 +23,11 @@ export default function LeadDashboard() {
 
   const tiles = [
     { label: "Today's 50", value: stats?.total?.toString() || '0', icon: Target, color: 'text-primary' },
-    { label: 'Avg Score', value: stats?.avg?.toString() || '—', icon: TrendingUp, color: 'text-success' },
+    { label: 'Avg Priority Score', value: stats?.avg?.toString() || '—', icon: TrendingUp, color: 'text-success' },
     { label: 'MA', value: stats?.ma?.toString() || '0', icon: MapPin, color: 'text-info' },
     { label: 'NE', value: stats?.ne?.toString() || '0', icon: MapPin, color: 'text-warning' },
     { label: 'National', value: stats?.us?.toString() || '0', icon: Globe, color: 'text-hot' },
-    { label: "COIs", value: coiQueue.length.toString(), icon: Users, color: 'text-accent-foreground' },
+    { label: "Today's COIs", value: coiQueue.length.toString(), icon: Users, color: 'text-accent-foreground' },
   ];
 
   return (
@@ -36,7 +36,7 @@ export default function LeadDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Lead Engine Dashboard</h1>
-            <p className="text-sm text-muted-foreground">MA-first daily lead generation</p>
+            <p className="text-sm text-muted-foreground">MA-first daily lead generation — Priority Outreach Score</p>
           </div>
           <div className="flex gap-2">
             <Button
@@ -50,7 +50,9 @@ export default function LeadDashboard() {
             <Button variant="outline" size="sm">
               <Download size={16} className="mr-1" /> Export Today's 50
             </Button>
-            <Button size="sm" variant="secondary">Push All to CRM</Button>
+            <Button size="sm" variant="secondary">
+              <Send size={16} className="mr-1" /> Push All to CRM
+            </Button>
           </div>
         </div>
 
@@ -87,12 +89,12 @@ export default function LeadDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-14">#</TableHead>
-                    <TableHead className="w-16">Score</TableHead>
+                    <TableHead className="w-16">Priority</TableHead>
                     <TableHead>Company</TableHead>
                     <TableHead>Industry</TableHead>
                     <TableHead className="w-20">Emp.</TableHead>
-                    <TableHead className="w-16">Geo</TableHead>
-                    <TableHead>Top Trigger</TableHead>
+                    <TableHead className="w-16">Region</TableHead>
+                    <TableHead>Signals</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

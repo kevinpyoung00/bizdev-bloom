@@ -21,6 +21,7 @@ export interface LeadWithAccount {
     triggers: any;
     notes: string | null;
     website: string | null;
+    disposition: string;
   };
 }
 
@@ -96,6 +97,29 @@ export function useAccountContacts(accountId: string | null) {
   });
 }
 
+export function useUpdateDisposition() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ accountId, disposition }: { accountId: string; disposition: string }) => {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ disposition } as any)
+        .eq('id', accountId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
+      toast({ title: 'Disposition updated' });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Update failed', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
 export function useRunScoring() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -106,7 +130,6 @@ export function useRunScoring() {
         body: { dry_run: dryRun },
       });
       if (error) throw error;
-      // Handle non-success responses (409 = already scored today)
       if (data && data.success === false) {
         throw new Error(data.message || 'Scoring returned an error');
       }

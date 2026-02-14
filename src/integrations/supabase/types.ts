@@ -58,6 +58,7 @@ export type Database = {
       accounts: {
         Row: {
           created_at: string
+          disposition: string
           domain: string | null
           employee_count: number | null
           geography_bucket: string | null
@@ -81,6 +82,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          disposition?: string
           domain?: string | null
           employee_count?: number | null
           geography_bucket?: string | null
@@ -104,6 +106,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          disposition?: string
           domain?: string | null
           employee_count?: number | null
           geography_bucket?: string | null
