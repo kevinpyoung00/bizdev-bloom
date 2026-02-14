@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send } from 'lucide-react';
+import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send, Check } from 'lucide-react';
 import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine';
 import { useCOIQueue } from '@/hooks/useCOIEngine';
 import { signalSummary, getStars, starsDisplay, starsColor, starsLabel } from '@/lib/leadPriority';
@@ -11,7 +11,8 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
   return <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>;
@@ -24,7 +25,26 @@ export default function LeadDashboard() {
   const runScoring = useRunScoring();
   const [exporting, setExporting] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const top10 = leads.slice(0, 10);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === top10.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(top10.map(l => l.id)));
+    }
+  };
+
+  const allSelected = top10.length > 0 && selectedIds.size === top10.length;
 
   const handleExport = async () => {
     if (leads.length === 0) { toast.info('No leads to export'); return; }
@@ -88,17 +108,17 @@ export default function LeadDashboard() {
   };
 
   const handlePushToCRM = async () => {
-    if (leads.length === 0) { toast.info('No leads to push'); return; }
+    const idsToPush = selectedIds.size > 0 ? Array.from(selectedIds) : leads.map(l => l.id);
+    if (idsToPush.length === 0) { toast.info('No leads selected'); return; }
     setPushing(true);
     try {
-      // Mark all leads as "pushed" status
-      const ids = leads.map(l => l.id);
       const { error } = await supabase
         .from('lead_queue')
         .update({ status: 'pushed' } as any)
-        .in('id', ids);
+        .in('id', idsToPush);
       if (error) throw error;
-      toast.success(`Pushed ${leads.length} leads to CRM`);
+      toast.success(`Pushed ${idsToPush.length} lead${idsToPush.length > 1 ? 's' : ''} to CRM`);
+      setSelectedIds(new Set());
     } catch (e: any) {
       toast.error(e.message || 'Push to CRM failed');
     } finally {
@@ -140,7 +160,7 @@ export default function LeadDashboard() {
           </Button>
           <Button size="sm" variant="secondary" onClick={handlePushToCRM} disabled={pushing || leads.length === 0}>
             {pushing ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Send size={16} className="mr-1" />}
-            Push All to CRM
+            Push to CRM{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </Button>
         </div>
 
@@ -178,6 +198,9 @@ export default function LeadDashboard() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+                    </TableHead>
                     <TableHead className="w-14">#</TableHead>
                     <TableHead className="w-16">Priority</TableHead>
                     <TableHead>Company</TableHead>
@@ -189,7 +212,14 @@ export default function LeadDashboard() {
                 </TableHeader>
                 <TableBody>
                   {top10.map((lead) => (
-                    <TableRow key={lead.id}>
+                    <TableRow
+                      key={lead.id}
+                      className={`cursor-pointer ${selectedIds.has(lead.id) ? 'bg-accent/50' : ''}`}
+                      onClick={() => toggleSelect(lead.id)}
+                    >
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        <Checkbox checked={selectedIds.has(lead.id)} onCheckedChange={() => toggleSelect(lead.id)} aria-label={`Select ${lead.account.name}`} />
+                      </TableCell>
                       <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
                       <TableCell><StarsBadge stars={getStars(lead.reason, lead.account.triggers)} /></TableCell>
                       <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
