@@ -3,11 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send, Check } from 'lucide-react';
+import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2, Send } from 'lucide-react';
 import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine';
 import { useCOIQueue } from '@/hooks/useCOIEngine';
 import {
-  signalSummary, getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
+  signalSummary, getSignalStars, computeReachStars, signalStarsDisplay,
   getPriorityLabel, priorityBadgeColor
 } from '@/lib/leadPriority';
 import { Link } from 'react-router-dom';
@@ -23,17 +23,33 @@ function DualStarsBadge({ lead }: { lead: any }) {
   const signalStars = getSignalStars(lead.reason, lead.account.triggers);
   const reachStars = computeReachStars(undefined, lead.reason);
   const priority = getPriorityLabel(signalStars);
+  const reachFilled = "★".repeat(reachStars) + "☆".repeat(3 - reachStars);
   return (
     <div className="flex flex-col items-start gap-0.5">
       <span className="text-sm font-bold tracking-wide" style={{ color: '#FFA500' }} title={`Signals: ${signalStars}`}>
         {signalStarsDisplay(signalStars)}
       </span>
-      <span className="text-xs font-bold tracking-wide" style={{ color: '#1E90FF' }} title={`Reach: ${reachStars}`}>
-        {reachStarsDisplay(reachStars)}
+      <span className="text-sm font-bold tracking-wide" style={{ color: '#1E90FF' }} title={`Reach: ${reachStars}`}>
+        {reachFilled}
       </span>
       <Badge variant="outline" className={`text-[9px] px-1.5 py-0 mt-0.5 ${priorityBadgeColor(priority)}`}>
         {priority.toUpperCase()}
       </Badge>
+    </div>
+  );
+}
+
+function StarsLegend() {
+  return (
+    <div className="flex items-center gap-6 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-bold" style={{ color: '#FFA500' }}>★</span>
+        <span>Signal Strength</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-bold" style={{ color: '#1E90FF' }}>★</span>
+        <span>Contact Reach</span>
+      </div>
     </div>
   );
 }
@@ -165,7 +181,6 @@ export default function LeadDashboard() {
     }
   };
 
-  // Count stars distribution for stats
   const starCounts = { high: 0, medium: 0, low: 0 };
   for (const lead of leads) {
     const s = getSignalStars(lead.reason, lead.account.triggers);
@@ -219,6 +234,8 @@ export default function LeadDashboard() {
             </Card>
           ))}
         </div>
+
+        <StarsLegend />
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
