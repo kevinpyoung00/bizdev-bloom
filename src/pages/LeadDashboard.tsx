@@ -13,6 +13,8 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { useState, useMemo } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useCrm } from '@/store/CrmContext';
+import type { RolePersona } from '@/types/crm';
 
 function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
   return <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>;
@@ -25,6 +27,7 @@ export default function LeadDashboard() {
   const runScoring = useRunScoring();
   const [exporting, setExporting] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const { addContact, contacts: crmContacts } = useCrm();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const top10 = leads.slice(0, 10);
 
@@ -112,12 +115,36 @@ export default function LeadDashboard() {
     if (idsToPush.length === 0) { toast.info('No leads selected'); return; }
     setPushing(true);
     try {
-      const { error } = await supabase
-        .from('lead_queue')
-        .update({ status: 'pushed' } as any)
-        .in('id', idsToPush);
+      const selectedLeads = leads.filter(l => idsToPush.includes(l.id));
+      const accountIds = selectedLeads.map(l => l.account.id);
+      const { data: leContacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
+
+      let created = 0;
+      for (const lead of selectedLeads) {
+        const acctContacts = (leContacts || []).filter(c => c.account_id === lead.account.id);
+        if (acctContacts.length === 0) {
+          const exists = crmContacts.some(c => c.company.toLowerCase() === lead.account.name.toLowerCase() && c.email === '');
+          if (!exists) {
+            const today = new Date().toISOString().split('T')[0];
+            addContact({ firstName: lead.account.name.split(' ')[0] || 'Unknown', lastName: lead.account.name.split(' ').slice(1).join(' ') || 'Contact', company: lead.account.name, title: '', rolePersona: 'Other', industry: lead.account.industry || '', employeeCount: lead.account.employee_count?.toString() || '', email: '', linkedInUrl: '', phone: '', source: 'ZoomInfo', renewalMonth: '', campaignId: '', status: 'Unworked', startDate: today, notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}` });
+            created++;
+          }
+        } else {
+          for (const c of acctContacts) {
+            if (c.email && crmContacts.some(crm => crm.email.toLowerCase() === c.email!.toLowerCase())) continue;
+            const today = new Date().toISOString().split('T')[0];
+            const t = `${(c.title || '').toLowerCase()} ${(c.department || '').toLowerCase()}`;
+            let role: RolePersona = 'Other';
+            if (t.includes('ceo')) role = 'CEO'; else if (t.includes('cfo')) role = 'CFO'; else if (t.includes('coo')) role = 'COO'; else if (t.includes('chro')) role = 'CHRO'; else if (t.includes('founder')) role = 'Founder'; else if (t.includes('hr') || t.includes('people')) role = 'HR'; else if (t.includes('benefit')) role = 'Benefits Leader'; else if (t.includes('finance')) role = 'Finance'; else if (t.includes('ops')) role = 'Ops';
+            addContact({ firstName: c.first_name, lastName: c.last_name, company: lead.account.name, title: c.title || '', rolePersona: role, industry: lead.account.industry || '', employeeCount: lead.account.employee_count?.toString() || '', email: c.email || '', linkedInUrl: c.linkedin_url || '', phone: c.phone || '', source: 'ZoomInfo', renewalMonth: '', campaignId: '', status: 'Unworked', startDate: today, notes: `Pushed from Lead Engine. Domain: ${lead.account.domain || 'N/A'}` });
+            created++;
+          }
+        }
+      }
+
+      const { error } = await supabase.from('lead_queue').update({ status: 'pushed' } as any).in('id', idsToPush);
       if (error) throw error;
-      toast.success(`Pushed ${idsToPush.length} lead${idsToPush.length > 1 ? 's' : ''} to CRM`);
+      toast.success(`Pushed ${selectedLeads.length} lead${selectedLeads.length > 1 ? 's' : ''} → ${created} contact${created !== 1 ? 's' : ''} added to CRM`);
       setSelectedIds(new Set());
     } catch (e: any) {
       toast.error(e.message || 'Push to CRM failed');
