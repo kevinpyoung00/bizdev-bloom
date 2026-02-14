@@ -8,6 +8,10 @@ import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine
 import { useCOIQueue } from '@/hooks/useCOIEngine';
 import { signalSummary, getStars, starsDisplay, starsColor, starsLabel } from '@/lib/leadPriority';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
+import { supabase } from '@/integrations/supabase/client';
+import { useState } from 'react';
 
 function StarsBadge({ stars }: { stars: 1 | 2 | 3 }) {
   return <span className={`text-sm font-bold tracking-wide ${starsColor(stars)}`} title={starsLabel(stars)}>{starsDisplay(stars)}</span>;
@@ -18,43 +22,129 @@ export default function LeadDashboard() {
   const { data: leads = [] } = useLeadQueue();
   const { data: coiQueue = [] } = useCOIQueue();
   const runScoring = useRunScoring();
+  const [exporting, setExporting] = useState(false);
+  const [pushing, setPushing] = useState(false);
   const top10 = leads.slice(0, 10);
+
+  const handleExport = async () => {
+    if (leads.length === 0) { toast.info('No leads to export'); return; }
+    setExporting(true);
+    try {
+      // Fetch contacts for all lead accounts
+      const accountIds = leads.map(l => l.account.id);
+      const { data: contacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
+      const contactsByAccount = new Map<string, any[]>();
+      for (const c of contacts || []) {
+        if (!c.account_id) continue;
+        if (!contactsByAccount.has(c.account_id)) contactsByAccount.set(c.account_id, []);
+        contactsByAccount.get(c.account_id)!.push(c);
+      }
+
+      const rows: any[] = [];
+      for (const lead of leads) {
+        const acctContacts = contactsByAccount.get(lead.account.id) || [];
+        if (acctContacts.length === 0) {
+          rows.push({
+            Rank: lead.priority_rank,
+            Score: lead.score,
+            Company: lead.account.name,
+            Domain: lead.account.domain || '',
+            Industry: lead.account.industry || '',
+            Employees: lead.account.employee_count || '',
+            City: lead.account.hq_city || '',
+            State: lead.account.hq_state || '',
+            Region: lead.account.geography_bucket || '',
+            'Contact First': '', 'Contact Last': '', Title: '', Email: '', Phone: '', LinkedIn: '',
+          });
+        } else {
+          for (const c of acctContacts) {
+            rows.push({
+              Rank: lead.priority_rank,
+              Score: lead.score,
+              Company: lead.account.name,
+              Domain: lead.account.domain || '',
+              Industry: lead.account.industry || '',
+              Employees: lead.account.employee_count || '',
+              City: lead.account.hq_city || '',
+              State: lead.account.hq_state || '',
+              Region: lead.account.geography_bucket || '',
+              'Contact First': c.first_name, 'Contact Last': c.last_name,
+              Title: c.title || '', Email: c.email || '', Phone: c.phone || '',
+              LinkedIn: c.linkedin_url || '',
+            });
+          }
+        }
+      }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Leads');
+      XLSX.writeFile(wb, `lead-queue-${new Date().toISOString().split('T')[0]}.csv`);
+      toast.success(`Exported ${leads.length} leads (${rows.length} rows)`);
+    } catch (e: any) {
+      toast.error(e.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handlePushToCRM = async () => {
+    if (leads.length === 0) { toast.info('No leads to push'); return; }
+    setPushing(true);
+    try {
+      // Mark all leads as "pushed" status
+      const ids = leads.map(l => l.id);
+      const { error } = await supabase
+        .from('lead_queue')
+        .update({ status: 'pushed' } as any)
+        .in('id', ids);
+      if (error) throw error;
+      toast.success(`Pushed ${leads.length} leads to CRM`);
+    } catch (e: any) {
+      toast.error(e.message || 'Push to CRM failed');
+    } finally {
+      setPushing(false);
+    }
+  };
 
   const tiles = [
     { label: "Today's 50", value: stats?.total?.toString() || '0', icon: Target, color: 'text-primary' },
-    { label: 'Avg Priority Score', value: stats?.avg?.toString() || '—', icon: TrendingUp, color: 'text-success' },
-    { label: 'MA', value: stats?.ma?.toString() || '0', icon: MapPin, color: 'text-info' },
-    { label: 'NE', value: stats?.ne?.toString() || '0', icon: MapPin, color: 'text-warning' },
-    { label: 'National', value: stats?.us?.toString() || '0', icon: Globe, color: 'text-hot' },
-    { label: "Today's COIs", value: coiQueue.length.toString(), icon: Users, color: 'text-accent-foreground' },
+    { label: 'Avg Priority Score', value: stats?.avg?.toString() || '—', icon: TrendingUp, color: 'text-primary' },
+    { label: 'MA', value: stats?.ma?.toString() || '0', icon: MapPin, color: 'text-primary' },
+    { label: 'NE', value: stats?.ne?.toString() || '0', icon: MapPin, color: 'text-primary' },
+    { label: 'National', value: stats?.us?.toString() || '0', icon: Globe, color: 'text-primary' },
+    { label: "Today's COIs", value: coiQueue.length.toString(), icon: Users, color: 'text-primary' },
   ];
 
   return (
     <Layout>
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Lead Engine Dashboard</h1>
-            <p className="text-sm text-muted-foreground">MA-first daily lead generation — Priority Outreach Score</p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => runScoring.mutate(false)}
-              disabled={runScoring.isPending}
-            >
-              {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Play size={16} className="mr-1" />}
-              Run Scoring Now
-            </Button>
-            <Button variant="outline" size="sm">
-              <Download size={16} className="mr-1" /> Export Today's 50
-            </Button>
-            <Button size="sm" variant="secondary">
-              <Send size={16} className="mr-1" /> Push All to CRM
-            </Button>
-          </div>
+        {/* Header: Title + subtitle spanning full width */}
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Lead Engine Dashboard</h1>
+          <p className="text-sm text-muted-foreground">MA-first daily lead generation — Priority Outreach Score · {leads.length} leads scored today</p>
         </div>
 
+        {/* Action buttons row */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={() => runScoring.mutate(false)}
+            disabled={runScoring.isPending}
+          >
+            {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Play size={16} className="mr-1" />}
+            Run Scoring Now
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting || leads.length === 0}>
+            {exporting ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Download size={16} className="mr-1" />}
+            Export Today's 50
+          </Button>
+          <Button size="sm" variant="secondary" onClick={handlePushToCRM} disabled={pushing || leads.length === 0}>
+            {pushing ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Send size={16} className="mr-1" />}
+            Push All to CRM
+          </Button>
+        </div>
+
+        {/* Stats tiles */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {tiles.map(tile => (
             <Card key={tile.label}>
@@ -69,6 +159,7 @@ export default function LeadDashboard() {
           ))}
         </div>
 
+        {/* Top 10 leads table */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Top 10 Leads</CardTitle>
