@@ -106,6 +106,10 @@ export function useRunScoring() {
         body: { dry_run: dryRun },
       });
       if (error) throw error;
+      // Handle non-success responses (409 = already scored today)
+      if (data && data.success === false) {
+        throw new Error(data.message || 'Scoring returned an error');
+      }
       return data;
     },
     onSuccess: (data) => {
@@ -117,10 +121,12 @@ export function useRunScoring() {
       });
     },
     onError: (err: any) => {
+      const msg = err.message || 'Unknown error';
+      const isAlreadyScored = msg.includes('already generated');
       toast({
-        title: 'Scoring failed',
-        description: err.message || 'Unknown error',
-        variant: 'destructive',
+        title: isAlreadyScored ? 'Already scored today' : 'Scoring failed',
+        description: isAlreadyScored ? "Today's lead queue is already built. Data is up to date." : msg,
+        variant: isAlreadyScored ? 'default' : 'destructive',
       });
     },
   });
