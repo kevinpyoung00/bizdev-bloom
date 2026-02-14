@@ -63,8 +63,9 @@ RULES:
 - End with soft CTA: "10-15 minutes next week"
 - Subject line must reference the signal
 - Do NOT use high-pressure sales language
-- Tone: consultative, concise, cost-containment focused
+- Tone: **Crisp Consultative** — concise, direct, cost-containment focused. No fluff.
 - Address the recipient as ${firstName}
+- Sign off with exactly "Best," on its own line. Do NOT include a name after "Best,"
 
 OUTPUT FORMAT (JSON):
 {"subject": "...", "body": "..."}`;
@@ -123,8 +124,10 @@ RULES:
 - Industry influences examples${hasSignals && week <= 3 ? "\n- Reference signals if relevant" : ""}
 - Soft CTA appropriate for week ${week}
 - Address as ${firstName}
-- Concise, consultative tone
+- Tone: **Crisp Consultative** — concise, direct, no fluff
 - No high-pressure language
+- Sign off with exactly "Best," on its own line. Do NOT include a name after "Best,"
+- After the body, add a line break and then "Further reading: [relevant resource title] — [url]" if the theme suggests a resource${week >= 2 ? `\n- Theme "${theme}" may pair with a guide, checklist, benchmark, or case study` : ""}
 
 OUTPUT FORMAT (JSON):
 {"subject": "...", "body": "..."}`;
@@ -254,12 +257,12 @@ function generateFallback(week: number, channel: string, data: any): { subject?:
     if (week === 1) {
       return {
         subject: `Quick question about ${name}'s benefits strategy`,
-        body: `Hi ${firstName},\n\nI noticed ${name} has been making some exciting moves recently. Companies at your stage often find that a fresh look at their employee benefits strategy can unlock meaningful savings while improving the employee experience.\n\nAt OneDigital, we work with organizations like yours to align benefits with business goals — especially during periods of growth or transition.\n\nWould you have 10-15 minutes next week for a brief conversation?\n\nBest,\nKevin`,
+        body: `Hi ${firstName},\n\nI noticed ${name} has been making some exciting moves recently. Companies at your stage often find that a fresh look at their employee benefits strategy can unlock meaningful savings while improving the employee experience.\n\nAt OneDigital, we work with organizations like yours to align benefits with business goals — especially during periods of growth or transition.\n\nWould you have 10-15 minutes next week for a brief conversation?\n\nBest,`,
       };
     }
     return {
       subject: `${theme} — ${name}`,
-      body: `Hi ${firstName},\n\nFollowing up on my earlier note. This week I wanted to share a perspective on ${theme.toLowerCase()}.\n\nMany ${data.industry_label || "mid-market"} companies we work with are finding new ways to optimize here. Happy to share what's working.\n\nLet me know if you'd like to connect briefly.\n\nBest,\nKevin`,
+      body: `Hi ${firstName},\n\nFollowing up on my earlier note. This week I wanted to share a perspective on ${theme.toLowerCase()}.\n\nMany ${data.industry_label || "mid-market"} companies we work with are finding new ways to optimize here. Happy to share what's working.\n\nLet me know if you'd like to connect briefly.\n\nBest,`,
     };
   }
 
@@ -272,6 +275,6 @@ function generateFallback(week: number, channel: string, data: any): { subject?:
 
   // phone
   return {
-    body: `Talking Points:\n- Introduce yourself: Kevin from OneDigital\n- Reference ${name}'s recent activity\n- Ask about their current benefits approach\n- Mention relevant ${theme.toLowerCase()} angle\n- Suggest a 10-minute follow-up\n\nVoicemail Script:\nHi ${firstName}, this is Kevin from OneDigital. I'm reaching out because I work with ${data.industry_label || "companies"} like ${name} on employee benefits strategy. I'd love to share a quick insight — would you have 10 minutes this week? My number is [your number]. Thanks!`,
+    body: `Talking Points:\n- Introduce yourself and OneDigital\n- Reference ${name}'s recent activity\n- Ask about their current benefits approach\n- Mention relevant ${theme.toLowerCase()} angle\n- Suggest a 10-minute follow-up\n\nVoicemail Script:\nHi ${firstName}, this is [Your Name] from OneDigital. I'm reaching out because I work with ${data.industry_label || "companies"} like ${name} on employee benefits strategy. I'd love to share a quick insight — would you have 10 minutes this week? My number is [your number]. Thanks!`,
   };
 }
