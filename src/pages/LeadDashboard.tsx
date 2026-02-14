@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Target, TrendingUp, MapPin, Globe, Users, Download, Play, Loader2 } from 'lucide-react';
 import { useLeadQueue, useLeadStats, useRunScoring } from '@/hooks/useLeadEngine';
+import { useCOIQueue } from '@/hooks/useCOIEngine';
 import { getTopTrigger } from '@/components/lead-engine/AccountDrawer';
 import { Link } from 'react-router-dom';
 
@@ -16,6 +17,7 @@ function ScoreBadge({ score }: { score: number }) {
 export default function LeadDashboard() {
   const { data: stats } = useLeadStats();
   const { data: leads = [] } = useLeadQueue();
+  const { data: coiQueue = [] } = useCOIQueue();
   const runScoring = useRunScoring();
   const top10 = leads.slice(0, 10);
 
@@ -25,7 +27,7 @@ export default function LeadDashboard() {
     { label: 'MA', value: stats?.ma?.toString() || '0', icon: MapPin, color: 'text-info' },
     { label: 'NE', value: stats?.ne?.toString() || '0', icon: MapPin, color: 'text-warning' },
     { label: 'National', value: stats?.us?.toString() || '0', icon: Globe, color: 'text-hot' },
-    { label: "COIs", value: '0', icon: Users, color: 'text-accent-foreground' },
+    { label: "COIs", value: coiQueue.length.toString(), icon: Users, color: 'text-accent-foreground' },
   ];
 
   return (
