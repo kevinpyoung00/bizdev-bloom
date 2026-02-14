@@ -9,6 +9,7 @@ import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
 import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertTriangle, ShieldX } from 'lucide-react';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 
 interface AccountDrawerProps {
   lead: LeadWithAccount | null;
@@ -281,7 +282,19 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                 HR Email
               </Button>
               <Button size="sm"><Send size={14} className="mr-1" /> Push to CRM</Button>
-              <Button size="sm" variant="outline"><Download size={14} className="mr-1" /> Export CSV</Button>
+              <Button size="sm" variant="outline" onClick={() => {
+                const rows = contacts.map((c: any) => ({
+                  'First Name': c.first_name, 'Last Name': c.last_name,
+                  Title: c.title || '', Email: c.email || '', Phone: c.phone || '',
+                  LinkedIn: c.linkedin_url || '', Company: account.name, Domain: account.domain || '',
+                }));
+                if (rows.length === 0) { toast.info('No contacts to export'); return; }
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+                XLSX.writeFile(wb, `${(account.domain || account.name).replace(/\W/g, '-')}-contacts.csv`);
+                toast.success(`Exported ${rows.length} contacts`);
+              }}><Download size={14} className="mr-1" /> Export CSV</Button>
             </div>
           </div>
 

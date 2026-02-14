@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Download, Send, Eye, Loader2, AlertTriangle, ShieldX } from 'lucide-react';
-import { useLeadQueue, useRunScoring } from '@/hooks/useLeadEngine';
+import { useLeadQueue, useRunScoring, useAccountContacts } from '@/hooks/useLeadEngine';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 import AccountDrawer, { getTopTrigger } from '@/components/lead-engine/AccountDrawer';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 
@@ -23,6 +26,49 @@ function DispositionCell({ disposition }: { disposition: string }) {
     return <Badge variant="destructive" className="text-[10px] gap-1"><AlertTriangle size={10} />{short}</Badge>;
   }
   return <Badge variant="secondary" className="text-[10px]">{disposition}</Badge>;
+}
+
+async function exportLeadsCsv(leads: LeadWithAccount[]) {
+  const rows = leads.map((l) => ({
+    Rank: l.priority_rank,
+    Score: l.score,
+    Company: l.account.name,
+    Domain: l.account.domain || '',
+    Industry: l.account.industry || '',
+    Employees: l.account.employee_count || '',
+    City: l.account.hq_city || '',
+    State: l.account.hq_state || '',
+    Region: l.account.geography_bucket || '',
+    Disposition: (l.account as any).disposition || 'active',
+    Signal: getTopTrigger(l.account.triggers),
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Leads');
+  XLSX.writeFile(wb, `lead-queue-${new Date().toISOString().split('T')[0]}.csv`);
+  toast.success(`Exported ${rows.length} leads`);
+}
+
+async function exportContactsCsv(leads: LeadWithAccount[]) {
+  const accountIds = leads.map((l) => l.account.id);
+  const { data: contacts } = await supabase.from('contacts_le').select('*, accounts(name, domain)').in('account_id', accountIds);
+  if (!contacts || contacts.length === 0) { toast.info('No contacts to export'); return; }
+  const rows = contacts.map((c: any) => ({
+    'First Name': c.first_name,
+    'Last Name': c.last_name,
+    Title: c.title || '',
+    Department: c.department || '',
+    Email: c.email || '',
+    Phone: c.phone || '',
+    LinkedIn: c.linkedin_url || '',
+    Company: c.accounts?.name || '',
+    Domain: c.accounts?.domain || '',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+  XLSX.writeFile(wb, `lead-contacts-${new Date().toISOString().split('T')[0]}.csv`);
+  toast.success(`Exported ${rows.length} contacts`);
 }
 
 export default function LeadQueue() {
@@ -56,10 +102,10 @@ export default function LeadQueue() {
               {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : null}
               Run Scoring
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => exportLeadsCsv(leads)}>
               <Download size={16} className="mr-1" /> Export CSV
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => exportContactsCsv(leads)}>
               <Download size={16} className="mr-1" /> Export Contacts
             </Button>
             <Button size="sm">
