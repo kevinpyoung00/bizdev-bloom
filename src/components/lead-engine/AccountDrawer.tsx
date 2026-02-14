@@ -3,10 +3,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { useAccountContacts } from '@/hooks/useLeadEngine';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAccountContacts, useUpdateDisposition } from '@/hooks/useLeadEngine';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief, useGenerateEmail } from '@/hooks/useAIGeneration';
-import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check } from 'lucide-react';
+import { Mail, Phone, Linkedin, ExternalLink, Send, Download, FileText, User, Loader2, Copy, Check, AlertTriangle, ShieldX } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface AccountDrawerProps {
@@ -15,16 +16,40 @@ interface AccountDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const DISPOSITION_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'needs_review', label: 'Needs Review' },
+  { value: 'rejected_existing_client', label: 'Rejected – Existing Client' },
+  { value: 'rejected_owned_by_other_rep', label: 'Rejected – Owned by Other Rep' },
+  { value: 'rejected_bad_fit', label: 'Rejected – Bad Fit' },
+  { value: 'rejected_no_opportunity', label: 'Rejected – No Opportunity' },
+  { value: 'suppressed', label: 'Suppressed' },
+];
+
 function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = Math.round((value / max) * 100);
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
+      <span className="text-xs text-muted-foreground w-32 shrink-0">{label}</span>
       <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
         <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs font-medium w-8 text-right text-foreground">{value}/{max}</span>
+      <span className="text-xs font-medium w-10 text-right text-foreground">{value}/{max}</span>
     </div>
+  );
+}
+
+function DispositionBadge({ disposition }: { disposition: string }) {
+  if (disposition === 'active') return null;
+  const isRejected = disposition.startsWith('rejected_');
+  const isSuppressed = disposition === 'suppressed';
+  const variant = isRejected || isSuppressed ? 'destructive' : 'secondary';
+  const icon = isSuppressed ? <ShieldX size={12} /> : isRejected ? <AlertTriangle size={12} /> : null;
+  const label = DISPOSITION_OPTIONS.find((o) => o.value === disposition)?.label || disposition;
+  return (
+    <Badge variant={variant as any} className="text-[10px] gap-1">
+      {icon} {label}
+    </Badge>
   );
 }
 
@@ -32,6 +57,12 @@ function getTopTrigger(triggers: any): string {
   if (!triggers) return '—';
   if (triggers.open_roles_60d >= 10) return `Hiring: ${triggers.open_roles_60d} roles`;
   if (triggers.c_suite_changes) return 'C-Suite Change';
+  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
+  if (rc) {
+    const items = Array.isArray(rc) ? rc : [rc];
+    const recent = items.find((i: any) => (i.days_ago ?? 999) <= 14);
+    if (recent) return `New Role: ${recent.title || 'HR/Benefits'}`;
+  }
   if (triggers.funding) return 'Funding/Expansion';
   if (triggers.open_roles_60d > 0) return `Hiring: ${triggers.open_roles_60d} roles`;
   return '—';
@@ -43,6 +74,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const { data: contacts = [] } = useAccountContacts(lead?.account?.id || null);
   const generateBrief = useGenerateBrief();
   const generateEmail = useGenerateEmail();
+  const updateDisposition = useUpdateDisposition();
 
   const [briefMarkdown, setBriefMarkdown] = useState<string | null>(null);
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string; persona: string } | null>(null);
@@ -51,6 +83,12 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   if (!lead) return null;
   const { account, score, reason, priority_rank } = lead;
   const r = reason || {};
+  const disposition = (account as any).disposition || 'active';
+
+  // Check for recent role change badge
+  const triggers = account.triggers || {};
+  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
+  const hasRecentRole = rc && (Array.isArray(rc) ? rc : [rc]).some((i: any) => (i.days_ago ?? 999) <= 14);
 
   const handleGenerateBrief = async () => {
     try {
@@ -83,10 +121,16 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
     <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setEmailDraft(null); } }}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-3">
+          <SheetTitle className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{account.name}</span>
             <Badge variant="outline" className="text-primary font-bold text-sm">{score}</Badge>
             <Badge variant="secondary">#{priority_rank}</Badge>
+            <DispositionBadge disposition={disposition} />
+            {hasRecentRole && (
+              <Badge className="bg-hot/15 text-hot text-[10px] gap-1">
+                <AlertTriangle size={10} /> New Role ≤14d
+              </Badge>
+            )}
           </SheetTitle>
         </SheetHeader>
 
@@ -112,6 +156,26 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
+          {/* Disposition */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Disposition</h3>
+            <Select
+              value={disposition}
+              onValueChange={(val) => updateDisposition.mutate({ accountId: account.id, disposition: val })}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DISPOSITION_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Separator />
+
           {/* Triggers */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Triggers</h3>
@@ -125,17 +189,28 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* Score Breakdown */}
+          {/* Priority Outreach Breakdown */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Score Breakdown</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Priority Outreach Breakdown</h3>
+            {r.guardrail && (
+              <p className="text-xs text-destructive mb-2">⚠ Guardrail active: {r.guardrail}</p>
+            )}
             <div className="space-y-2">
-              <ScoreBar label="Industry Fit" value={r.industry_fit ?? 0} max={18} />
-              <ScoreBar label="Size Fit" value={r.size_fit ?? 0} max={18} />
-              <ScoreBar label="Geography" value={r.geo_fit ?? 0} max={24} />
-              <ScoreBar label="Hiring Velocity" value={r.hiring ?? 0} max={20} />
-              <ScoreBar label="C-Suite Movement" value={r.c_suite ?? 0} max={12} />
-              <ScoreBar label="Funding" value={r.funding ?? 0} max={8} />
-              {r.bonus > 0 && <ScoreBar label="High-Growth Bonus" value={r.bonus} max={5} />}
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Fit (0–40)</p>
+              <ScoreBar label="Industry" value={r.industry ?? 0} max={20} />
+              <ScoreBar label="Size" value={r.size ?? 0} max={20} />
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mt-3">Timing (0–60)</p>
+              <ScoreBar label="Hiring" value={r.hiring ?? 0} max={25} />
+              <ScoreBar label="C-Suite Movement" value={r.c_suite ?? 0} max={20} />
+              <ScoreBar label="Recent Role Change" value={r.recent_role_change ?? 0} max={10} />
+              <ScoreBar label="Funding / Expansion" value={r.funding ?? 0} max={5} />
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mt-3">Reachability (0–10)</p>
+              <ScoreBar label="Contact Data" value={r.reachability ?? 0} max={10} />
+              <Separator className="my-2" />
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Raw / Normalized</span>
+                <span className="font-bold text-foreground">{r.raw ?? 0} / 110 → {r.normalized ?? 0}</span>
+              </div>
             </div>
           </div>
 
