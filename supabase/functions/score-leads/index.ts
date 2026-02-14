@@ -97,10 +97,10 @@ function scoreSize(empCount: number | null): number {
 function scoreHiring(triggers: any): number {
   if (!triggers) return 0;
   const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
-  if (openRoles >= 10) return 25;
+  if (openRoles >= 10) return 30;
   if (openRoles >= 6) return 20;
-  if (openRoles >= 3) return 12;
-  if (openRoles > 0) return Math.min(10, Math.round((openRoles / 10) * 20));
+  if (openRoles >= 3) return 10;
+  if (openRoles >= 1) return 5;
   return 0;
 }
 
@@ -109,20 +109,19 @@ function scoreCsuite(triggers: any): number {
   const changes = triggers.c_suite_changes ?? triggers.leadership_changes;
   if (!changes) return 0;
 
-  // Determine role type and recency
   const monthsAgo = changes.months_ago ?? changes.recency_months ?? null;
   const title = (changes.title || changes.role || "").toLowerCase();
 
-  // Role-based max scores
-  let maxScore = 12; // unknown role default
+  // Role-based max scores (out of 5)
+  let maxScore = 2; // unknown role default
   if (title.includes("cfo") || title.includes("chief financial") ||
       title.includes("chro") || title.includes("chief human") ||
       title.includes("vp people") || title.includes("vp hr") ||
       title.includes("head of people") || title.includes("head of hr")) {
-    maxScore = 20;
+    maxScore = 5;
   } else if (title.includes("coo") || title.includes("chief operating") ||
              title.includes("ceo") || title.includes("chief executive")) {
-    maxScore = 16;
+    maxScore = 3;
   }
 
   if (monthsAgo !== null && monthsAgo !== undefined) {
@@ -150,10 +149,10 @@ function scoreRecentRoleChange(triggers: any): number {
     const isRelevant = HR_KEYWORDS.some((kw) => combined.includes(kw));
     if (!isRelevant) continue;
     const daysAgo = item.days_ago ?? 999;
-    if (daysAgo <= 14) best = Math.max(best, 10);
-    else if (daysAgo <= 30) best = Math.max(best, 6);
-    else if (daysAgo <= 60) best = Math.max(best, 3);
-    else if (daysAgo <= 180) best = Math.max(best, 1);
+    if (daysAgo <= 14) best = Math.max(best, 25);
+    else if (daysAgo <= 30) best = Math.max(best, 15);
+    else if (daysAgo <= 60) best = Math.max(best, 10);
+    else if (daysAgo <= 180) best = Math.max(best, 5);
   }
   return best;
 }
@@ -162,34 +161,36 @@ function scoreFunding(triggers: any): number {
   if (!triggers) return 0;
   const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
   if (!funding) return 0;
-  if (typeof funding === "boolean" && funding) return 3;
+  if (typeof funding === "boolean" && funding) return 6;
   if (typeof funding === "object") {
-    const recency = funding.months_ago ?? 12;
-    if (recency <= 3) return 5;
-    if (recency <= 6) return 4;
+    const recency = funding.months_ago ?? 999;
+    if (recency <= 3) return 10;
+    if (recency <= 6) return 6;
     if (recency <= 12) return 3;
-    return 1;
+    return 0;
   }
-  return 3;
+  return 6;
 }
 
-// ─── Reachability scoring (0–10) ───
+// ─── Reachability scoring (0–30) ───
 
 function scoreReachability(contacts: any[]): number {
   if (!contacts || contacts.length === 0) return 0;
   let pts = 0;
   const hasEmail = contacts.some((c) => c.email);
   const hasPhone = contacts.some((c) => c.phone);
-  const linkedinCount = contacts.filter((c) => c.linkedin_url).length;
-  const hasCfoChro = contacts.some((c) => {
+  const hasLinkedin = contacts.some((c) => c.linkedin_url);
+  const hasTargetPersona = contacts.some((c) => {
     const t = (c.title || "").toLowerCase();
-    return t.includes("cfo") || t.includes("chief financial") || t.includes("chro") || t.includes("chief human") || t.includes("vp hr") || t.includes("vp human") || t.includes("head of hr") || t.includes("head of people");
+    return t.includes("hr") || t.includes("human resources") || t.includes("benefits") ||
+           t.includes("people ops") || t.includes("people operations") || t.includes("finance") ||
+           t.includes("controller") || t.includes("payroll");
   });
-  if (hasEmail) pts += 4;
-  if (hasPhone) pts += 2;
-  if (linkedinCount >= 2) pts += 2;
-  if (hasCfoChro) pts += 2;
-  return Math.min(10, pts);
+  if (hasEmail) pts += 12;
+  if (hasPhone) pts += 10;
+  if (hasLinkedin) pts += 6;
+  if (hasTargetPersona) pts += 2;
+  return Math.min(30, pts);
 }
 
 // ─── Signal classification for star priority ───
@@ -263,7 +264,7 @@ function computeStars(signals: SignalSizes, reachability: number): 1 | 2 | 3 {
   const largeCount = sizes.filter((s) => s === "large").length;
   const mediumCount = sizes.filter((s) => s === "medium").length;
   const smallCount = sizes.filter((s) => s === "small").length;
-  const reachReady = reachability >= 6;
+  const reachReady = reachability >= 20;
 
   // ★★★
   if (largeCount >= 1) return 3;
@@ -323,19 +324,19 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   if (disposition === "suppressed") guardrail = "suppressed";
   if (disposition?.startsWith("rejected_")) guardrail = `disposition_${disposition}`;
 
-  const industry = guardrail ? 0 : scoreIndustry(account.industry);
-  const size = guardrail ? 0 : scoreSize(empCount);
+  const industry = scoreIndustry(account.industry); // kept for reference, not in score
+  const size = scoreSize(empCount); // kept for reference, not in score
   const hiring = guardrail ? 0 : scoreHiring(triggers);
   const c_suite = guardrail ? 0 : scoreCsuite(triggers);
   const recent_role_change = guardrail ? 0 : scoreRecentRoleChange(triggers);
   const funding = guardrail ? 0 : scoreFunding(triggers);
   const reachability = guardrail ? 0 : scoreReachability(contacts);
 
-  const raw = industry + size + hiring + c_suite + recent_role_change + funding + reachability;
-  const normalized = guardrail ? 0 : Math.min(100, Math.round((raw / 110) * 1000) / 10);
+  const raw = hiring + c_suite + recent_role_change + funding + reachability;
+  const normalized = guardrail ? 0 : Math.min(100, raw);
 
   const signals = classifySignals(triggers);
-  const stars = guardrail ? 1 : computeStars(signals, reachability);
+  const stars = guardrail ? 1 : computeStars(signals, reachability >= 20 ? reachability : 0);
 
   return {
     id: account.id,

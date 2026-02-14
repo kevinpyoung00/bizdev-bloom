@@ -64,7 +64,7 @@ export function computeStars(signals: SignalSizes, reachability: number): 1 | 2 
   const largeCount = sizes.filter((s) => s === "large").length;
   const mediumCount = sizes.filter((s) => s === "medium").length;
   const smallCount = sizes.filter((s) => s === "small").length;
-  const reachReady = reachability >= 6;
+  const reachReady = reachability >= 20;
 
   if (largeCount >= 1) return 3;
   if (mediumCount >= 2) return 3;
