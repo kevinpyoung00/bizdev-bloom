@@ -164,14 +164,14 @@ export default function Contacts() {
                       <td className="px-4 py-3 text-foreground">
                         {contact.company ? (
                           <a
-                            href={`https://www.google.com/search?q=${encodeURIComponent(contact.company + ' website')}&btnI=1`}
+                            href={`https://www.google.com/search?q=${encodeURIComponent(contact.company)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={e => e.stopPropagation()}
                             className="hover:text-primary hover:underline transition-colors inline-flex items-center gap-1"
                           >
                             {contact.company}
-                            <ExternalLink size={12} className="opacity-0 group-hover:opacity-100" />
+                            <ExternalLink size={12} className="text-muted-foreground" />
                           </a>
                         ) : '—'}
                       </td>
