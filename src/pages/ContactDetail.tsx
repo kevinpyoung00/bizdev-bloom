@@ -8,6 +8,7 @@ import ContactForm from '@/components/crm/ContactForm';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ArrowLeft, Calendar, Mail, Linkedin, Phone, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus, ChevronDown, Building2, Zap, Globe, Loader2, Sparkles, Target } from 'lucide-react';
+import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import { Badge } from '@/components/ui/badge';
 import { getContactProgress, getHiringIntensity } from '@/types/crm';
 import SignalChips, { buildChipsFromSignals } from '@/components/crm/SignalChips';
@@ -240,6 +241,14 @@ export default function ContactDetail() {
             <Linkedin size={14} className={contact.linkedInUrl ? 'text-primary' : 'text-muted-foreground/30'} />
           </div>
           <SignalChips chips={buildChipsFromSignals(contact.signals)} />
+          <div className="pt-2 border-t border-border mt-3">
+            <SuggestedPersonaBadge
+              employeeCount={contact.employeeCount ? parseInt(contact.employeeCount, 10) : null}
+              industryKey={matchIndustryKey(contact.industry)}
+              signals={leadSignals ? { lead_signals: leadSignals } : undefined}
+              variant="full"
+            />
+          </div>
         </div>
 
         {/* Company Overview (Collapsible) */}
