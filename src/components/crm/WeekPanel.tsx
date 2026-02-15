@@ -329,15 +329,15 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
       {/* Three generation buttons + done checkboxes */}
       <div className="space-y-2 mb-3">
         <div className="flex items-center gap-2">
-          <Checkbox checked={emailDone} onCheckedChange={() => markTouchDone(contactId, week, 'Email')} />
-          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${emailDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('email')} disabled={isUnsubscribed}>
-            <Mail size={12} /> Generate Email
+          <Checkbox checked={liDone} onCheckedChange={() => markTouchDone(contactId, week, 'LinkedIn')} />
+          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${liDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('linkedin')}>
+            <Linkedin size={12} /> {week === 1 ? 'Connect / Generate LinkedIn Message' : 'Generate LinkedIn Message'}
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <Checkbox checked={liDone} onCheckedChange={() => markTouchDone(contactId, week, 'LinkedIn')} />
-          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${liDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('linkedin')}>
-            <Linkedin size={12} /> Generate LinkedIn Message
+          <Checkbox checked={emailDone} onCheckedChange={() => markTouchDone(contactId, week, 'Email')} />
+          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${emailDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('email')} disabled={isUnsubscribed}>
+            <Mail size={12} /> Generate Email
           </Button>
         </div>
         <div className="flex items-center gap-2">
