@@ -10,16 +10,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { website } = await req.json();
+    const { website, company } = await req.json();
 
-    if (!website) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Website URL is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Step 1: Scrape website with Firecrawl
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
     if (!firecrawlKey) {
       return new Response(
@@ -28,13 +20,44 @@ Deno.serve(async (req) => {
       );
     }
 
-    let formattedUrl = website.trim();
+    let formattedUrl = website?.trim() || "";
+
+    // Step 0: If no website provided but company name given, discover it via Firecrawl search
+    if (!formattedUrl && company) {
+      console.log("No website provided — searching for:", company);
+      const searchResp = await fetch("https://api.firecrawl.dev/v1/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${firecrawlKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: `${company} official website`,
+          limit: 3,
+        }),
+      });
+      const searchData = await searchResp.json();
+      if (searchResp.ok && searchData.data?.length > 0) {
+        // Pick the first result URL as the company website
+        formattedUrl = searchData.data[0].url || "";
+        console.log("Discovered website:", formattedUrl);
+      }
+    }
+
+    if (!formattedUrl) {
+      return new Response(
+        JSON.stringify({ success: false, error: "No website URL provided and could not discover one" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
       formattedUrl = `https://${formattedUrl}`;
     }
 
     console.log("Scraping:", formattedUrl);
 
+    // Step 1: Scrape website with Firecrawl
     const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: {
@@ -71,10 +94,10 @@ Deno.serve(async (req) => {
     // Step 2: Summarize with AI
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!lovableApiKey) {
-      // Return raw markdown as fallback
       return new Response(
         JSON.stringify({
           success: true,
+          website: formattedUrl,
           summary: markdown.slice(0, 500),
           outreach_angles: [],
           raw_title: metadata.title || "",
@@ -83,7 +106,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Truncate to avoid token limits
     const truncated = markdown.slice(0, 6000);
 
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -132,10 +154,10 @@ Respond with valid JSON only. No markdown, no backticks.`,
         );
       }
 
-      // Fallback to raw
       return new Response(
         JSON.stringify({
           success: true,
+          website: formattedUrl,
           summary: markdown.slice(0, 500),
           outreach_angles: [],
           key_facts: [],
@@ -165,6 +187,7 @@ Respond with valid JSON only. No markdown, no backticks.`,
     return new Response(
       JSON.stringify({
         success: true,
+        website: formattedUrl,
         summary: parsed.summary || "",
         key_facts: parsed.key_facts || [],
         outreach_angles: parsed.outreach_angles || [],

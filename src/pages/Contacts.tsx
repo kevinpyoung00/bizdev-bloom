@@ -7,15 +7,18 @@ import ImportContacts from '@/components/crm/ImportContacts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Download, ArrowUpDown, Upload, ExternalLink, Linkedin } from 'lucide-react';
+import { Plus, Search, Download, ArrowUpDown, Upload, ExternalLink, Linkedin, Sparkles, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ContactStatus, getContactProgress } from '@/types/crm';
+import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
+import { toast } from 'sonner';
 
 const statuses: (ContactStatus | 'All')[] = ['All', 'Unworked', 'In Sequence', 'Warm', 'Hot', 'Disqualified'];
 
 export default function Contacts() {
   const { contacts, campaigns } = useCrm();
   const navigate = useNavigate();
+  const { enrichContactSilent } = useCompanyEnrich();
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
@@ -23,6 +26,27 @@ export default function Contacts() {
   const [campaignFilter, setCampaignFilter] = useState('All');
   const [sortField, setSortField] = useState<'name' | 'company' | 'week' | 'nextTouch'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [bulkEnriching, setBulkEnriching] = useState(false);
+
+  const unenrichedCount = useMemo(() => contacts.filter(c => !c.companyScrape?.scrapedAt && c.company).length, [contacts]);
+
+  const handleBulkEnrich = async () => {
+    const toEnrich = contacts.filter(c => !c.companyScrape?.scrapedAt && c.company);
+    if (toEnrich.length === 0) {
+      toast.info('All contacts are already enriched');
+      return;
+    }
+    setBulkEnriching(true);
+    toast.info(`Enriching ${toEnrich.length} contacts in background...`);
+    let done = 0;
+    for (const c of toEnrich) {
+      await enrichContactSilent(c.id, { website: c.website, company: c.company });
+      done++;
+      if (done % 5 === 0) toast.info(`Enriched ${done}/${toEnrich.length}...`);
+    }
+    toast.success(`Enrichment complete — ${done} contacts updated`);
+    setBulkEnriching(false);
+  };
 
   const filtered = useMemo(() => {
     let list = contacts;
@@ -80,6 +104,11 @@ export default function Contacts() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={exportCsv}><Download size={16} className="mr-1" /> Export</Button>
             <Button variant="outline" size="sm" onClick={() => setShowImport(true)}><Upload size={16} className="mr-1" /> Import</Button>
+            {unenrichedCount > 0 && (
+              <Button variant="outline" size="sm" onClick={handleBulkEnrich} disabled={bulkEnriching}>
+                {bulkEnriching ? <><Loader2 size={16} className="mr-1 animate-spin" /> Enriching...</> : <><Sparkles size={16} className="mr-1" /> Enrich All ({unenrichedCount})</>}
+              </Button>
+            )}
             <Button size="sm" onClick={() => setShowForm(true)}><Plus size={16} className="mr-1" /> Add Contact</Button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Contact, RolePersona, ContactSource, ContactStatus, FundingStage, CSuiteRole, TriggerTag, ContactSignals, MilestoneFlags, createEmptySignals, getHiringIntensity, isHrChangeRecent } from '@/types/crm';
+import { Contact, RolePersona, ContactSource, ContactStatus, FundingStage, CSuiteRole, TriggerTag, ContactSignals, MilestoneFlags, createEmptySignals, getHiringIntensity, isHrChangeRecent, generateId } from '@/types/crm';
 import { useCrm } from '@/store/CrmContext';
+import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
 
 const roles: RolePersona[] = ['CEO', 'Founder', 'CFO', 'COO', 'CHRO', 'HR', 'Benefits Leader', 'Finance', 'Ops', 'Other'];
 const sources: ContactSource[] = ['Sales Navigator', 'ZoomInfo', 'Zywave', 'List Upload'];
@@ -25,7 +27,8 @@ interface Props {
 }
 
 export default function ContactForm({ open, onOpenChange, editContact }: Props) {
-  const { addContact, updateContact, campaigns } = useCrm();
+  const { addContact, updateContact, campaigns, contacts } = useCrm();
+  const { enrichContactSilent } = useCompanyEnrich();
   const today = new Date().toISOString().split('T')[0];
 
   const [form, setForm] = useState({
@@ -71,6 +74,17 @@ export default function ContactForm({ open, onOpenChange, editContact }: Props) 
       updateContact(editContact.id, payload);
     } else {
       addContact(payload as any);
+      // Auto-enrich in the background after adding
+      // We need to find the new contact's id — it's the latest added contact
+      setTimeout(() => {
+        // The contact was just added; find it by matching unique fields
+        const stored = JSON.parse(localStorage.getItem('crm_contacts') || '[]');
+        const newest = stored[stored.length - 1];
+        if (newest && form.company) {
+          toast.info('Auto-enriching company intel in the background...');
+          enrichContactSilent(newest.id, { company: form.company });
+        }
+      }, 300);
     }
     onOpenChange(false);
   };
