@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, PhoneCall } from 'lucide-react';
+import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, PhoneCall, StickyNote } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { getWeekTheme } from '@/lib/weekThemes';
@@ -216,6 +216,7 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
   const [modalChannel, setModalChannel] = useState<'email' | 'linkedin' | 'phone'>('email');
   const [modalContent, setModalContent] = useState('');
   const [copied, setCopied] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const openGenModal = (channel: 'email' | 'linkedin' | 'phone') => {
     setModalChannel(channel);
@@ -344,6 +345,7 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
           <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${phoneDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('phone')}>
             <Phone size={12} /> Generate Phone Touch
           </Button>
+          {!hasCall && <span className="text-[10px] text-muted-foreground italic">Optional</span>}
         </div>
       </div>
 
@@ -449,23 +451,39 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-2 gap-2 mt-3">
+      <div className="flex items-center gap-2 mt-3">
         <Select value={outcome} onValueChange={v => setWeekOutcome(contactId, week, v as TouchOutcome | '')}>
-          <SelectTrigger className="h-8 text-xs">
+          <SelectTrigger className="h-8 text-xs flex-1">
             <SelectValue placeholder="Outcome" />
           </SelectTrigger>
           <SelectContent>
             {outcomes.map(o => <SelectItem key={o || 'none'} value={o || 'none'}>{o || 'No outcome'}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Textarea
-          value={notes}
-          onChange={e => setWeekNotes(contactId, week, e.target.value)}
-          placeholder="Notes..."
-          className="text-xs h-8 min-h-[32px] resize-none"
-          rows={1}
-        />
+        <Button size="sm" variant="outline" className="gap-1 text-xs h-8" onClick={() => setNotesOpen(true)}>
+          <StickyNote size={12} />
+          {notes ? 'View Notes' : 'Add Notes'}
+        </Button>
       </div>
+
+      {/* Notes dialog */}
+      <Dialog open={notesOpen} onOpenChange={setNotesOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Week {week} Notes</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={notes}
+            onChange={e => setWeekNotes(contactId, week, e.target.value)}
+            placeholder="Add notes for this week..."
+            className="text-sm min-h-[150px] resize-y"
+            rows={6}
+          />
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setNotesOpen(false)}>Done</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
