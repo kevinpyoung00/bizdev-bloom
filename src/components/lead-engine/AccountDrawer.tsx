@@ -4,12 +4,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAccountContacts, useUpdateDisposition } from '@/hooks/useLeadEngine';
+import { useAccountContacts, useUpdateDisposition, useUpdateAccountField } from '@/hooks/useLeadEngine';
+import { Input } from '@/components/ui/input';
 import { useClaimLead, useRejectLead, useStartCampaign, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { useGenerateDrip } from '@/hooks/useGenerateDrip';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
-import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play } from 'lucide-react';
+import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play, Pencil, Save } from 'lucide-react';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import D365OwnerBadge from '@/components/lead-engine/D365OwnerBadge';
 import { toast } from 'sonner';
@@ -33,6 +34,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const { data: contacts = [] } = useAccountContacts(lead?.account?.id || null);
   const generateBrief = useGenerateBrief();
   const updateDisposition = useUpdateDisposition();
+  const updateAccountField = useUpdateAccountField();
   const claimLead = useClaimLead();
   const rejectLead = useRejectLead();
   const startCampaign = useStartCampaign();
@@ -44,6 +46,10 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const [showDrip, setShowDrip] = useState(false);
   const [generatingChannel, setGeneratingChannel] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState<string | null>(null);
+  const [editingD365, setEditingD365] = useState(false);
+  const [editingZywave, setEditingZywave] = useState(false);
+  const [d365Draft, setD365Draft] = useState('');
+  const [zywaveDraft, setZywaveDraft] = useState('');
 
   if (!lead) return null;
   const { account, reason, priority_rank } = lead;
@@ -140,7 +146,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
   return (
     <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setShowDrip(false); setPersonaOverride(null); } }}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+      <SheetContent className="w-full sm:max-w-lg overflow-y-auto" onCloseAutoFocus={() => { setBriefMarkdown(null); setShowDrip(false); setPersonaOverride(null); setEditingD365(false); setEditingZywave(false); }}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{account.name}</span>
@@ -199,10 +205,48 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             </div>
           </div>
 
-          {/* D365 Ownership */}
-          <div className="flex items-center gap-2">
+          {/* D365 Ownership — editable */}
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-muted-foreground">D365:</span>
-            <D365OwnerBadge ownerName={(account as any).d365_owner_name} />
+            {editingD365 ? (
+              <div className="flex items-center gap-1">
+                <Input className="h-7 w-40 text-xs" placeholder="Owner name or blank" value={d365Draft} onChange={e => setD365Draft(e.target.value)} />
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                  updateAccountField.mutate({ accountId: account.id, field: 'd365_owner_name', value: d365Draft.trim() || null });
+                  setEditingD365(false);
+                  toast.success('D365 owner updated');
+                }}><Save size={12} /></Button>
+              </div>
+            ) : (
+              <>
+                <D365OwnerBadge ownerName={(account as any).d365_owner_name} />
+                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setD365Draft((account as any).d365_owner_name || ''); setEditingD365(true); }}>
+                  <Pencil size={11} />
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Zywave ID — editable */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">Zywave:</span>
+            {editingZywave ? (
+              <div className="flex items-center gap-1">
+                <Input className="h-7 w-40 text-xs" placeholder="Zywave ID" value={zywaveDraft} onChange={e => setZywaveDraft(e.target.value)} />
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                  updateAccountField.mutate({ accountId: account.id, field: 'zywave_id', value: zywaveDraft.trim() || null });
+                  setEditingZywave(false);
+                  toast.success('Zywave ID updated');
+                }}><Save size={12} /></Button>
+              </div>
+            ) : (
+              <>
+                <Badge variant="outline" className="text-xs">{(account as any).zywave_id || '—'}</Badge>
+                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setZywaveDraft((account as any).zywave_id || ''); setEditingZywave(true); }}>
+                  <Pencil size={11} />
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Suggested Persona To Look Up on LinkedIn */}
