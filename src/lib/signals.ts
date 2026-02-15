@@ -54,6 +54,11 @@ export function signalsRecent(s?: LeadSignals | null): boolean {
   return false;
 }
 
+/** Does the lead have a confirmed recent carrier change (≤120 days)? */
+export function hasRecentCarrierChange(s?: LeadSignals): boolean {
+  return !!(s?.carrier_change?.recent && s.carrier_change.days_ago != null && s.carrier_change.days_ago <= 120);
+}
+
 /** Build a human-readable "Reason Selected" line from signals */
 export function buildReasonSelectedLine(s?: LeadSignals | null): string {
   if (!s) return 'ICP fit';
