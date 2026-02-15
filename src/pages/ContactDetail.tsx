@@ -38,6 +38,33 @@ function getPriorityLabel(signals: any): { label: string; className: string } {
   return { label: 'Low', className: 'bg-muted text-muted-foreground' };
 }
 
+function buildCompanySummary(contact: any): string {
+  const parts: string[] = [];
+  const name = contact.company || 'This company';
+  const industry = contact.industry ? `in the ${contact.industry} industry` : '';
+  const emp = contact.employeeCount ? `with approximately ${contact.employeeCount} employees` : '';
+  const base = [name, industry, emp].filter(Boolean).join(' ');
+  parts.push(base + '.');
+
+  if (contact.currentCarrier) parts.push(`Currently using ${contact.currentCarrier} for benefits.`);
+  if (contact.renewalMonth) parts.push(`Benefits renewal is in ${contact.renewalMonth}.`);
+
+  const jobs = contact.signals?.jobs_60d;
+  if (jobs && jobs >= 3) parts.push(`Actively hiring with ${jobs} open roles in the last 60 days.`);
+  if (contact.signals?.funding_stage && contact.signals.funding_stage !== 'None') {
+    const daysAgo = contact.signals.funding_days_ago;
+    parts.push(`Recently completed a ${contact.signals.funding_stage} funding round${daysAgo ? ` (${daysAgo} days ago)` : ''}.`);
+  }
+  if (contact.signals?.hr_change_title) {
+    parts.push(`Underwent an HR leadership change — new ${contact.signals.hr_change_title}${contact.signals.hr_change_days_ago ? ` (${contact.signals.hr_change_days_ago}d ago)` : ''}.`);
+  }
+  if (contact.signals?.carrier_change?.recent) parts.push('Recently changed benefits carriers, signaling openness to new solutions.');
+  if (contact.signals?.talent_risk?.risk) parts.push('Showing signs of employee retention challenges.');
+  if (contact.source) parts.push(`Sourced via ${contact.source}.`);
+
+  return parts.join(' ');
+}
+
 function inferBenefitsPainPoints(contact: any): string[] {
   const pains: string[] = [];
   const emp = parseInt(contact.employeeCount, 10);
@@ -194,6 +221,12 @@ export default function ContactDetail() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="px-4 pb-4 space-y-3">
+                {/* Company Summary */}
+                <div>
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {buildCompanySummary(contact)}
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground">Industry</p>
