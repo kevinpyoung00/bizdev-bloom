@@ -261,19 +261,6 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
     return { bullets: parts[0]?.trim() || modalContent, voicemail: parts[1]?.trim() || '' };
   };
 
-  const openOutlookWeb = () => {
-    const subject = encodeURIComponent(getEmailSubject());
-    const body = encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'));
-    window.open(`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(contactEmail)}&subject=${subject}&body=${body}`, '_blank');
-    autoCheckChannel();
-  };
-
-  const openMailto = () => {
-    const subject = encodeURIComponent(getEmailSubject());
-    const body = encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'));
-    window.location.href = `mailto:${contactEmail}?subject=${subject}&body=${body}`;
-    autoCheckChannel();
-  };
 
   const channelLabel = modalChannel === 'email' ? 'Email'
     : modalChannel === 'linkedin' ? (week === 1 ? 'LinkedIn Connect Note' : 'LinkedIn Message')
@@ -300,6 +287,9 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
             <p className="text-xs text-muted-foreground">{theme.description}</p>
           </div>
         </div>
+        {isComplete && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">Week completed</span>
+        )}
         {outcome && (
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
             outcome === 'Meeting Booked' ? 'bg-success/10 text-success' :
@@ -330,23 +320,28 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
         {asset && <div className="text-xs text-muted-foreground">Asset: <span className="text-foreground">{asset}</span></div>}
       </div>
 
+      {/* No email hint */}
+      {!contactEmail && !isUnsubscribed && (
+        <p className="text-[10px] text-muted-foreground mb-2 italic">No email on file — start with LinkedIn.</p>
+      )}
+
       {/* Three generation buttons + done checkboxes */}
       <div className="space-y-2 mb-3">
         <div className="flex items-center gap-2">
           <Checkbox checked={emailDone} onCheckedChange={() => markTouchDone(contactId, week, 'Email')} />
-          <Button size="sm" variant="outline" className="gap-1 text-xs flex-1" onClick={() => openGenModal('email')}>
+          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${emailDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('email')} disabled={isUnsubscribed}>
             <Mail size={12} /> Generate Email
           </Button>
         </div>
         <div className="flex items-center gap-2">
           <Checkbox checked={liDone} onCheckedChange={() => markTouchDone(contactId, week, 'LinkedIn')} />
-          <Button size="sm" variant="outline" className="gap-1 text-xs flex-1" onClick={() => openGenModal('linkedin')}>
+          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${liDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('linkedin')}>
             <Linkedin size={12} /> Generate LinkedIn Message
           </Button>
         </div>
         <div className="flex items-center gap-2">
           <Checkbox checked={phoneDone} onCheckedChange={() => markTouchDone(contactId, week, 'Phone')} />
-          <Button size="sm" variant="outline" className="gap-1 text-xs flex-1" onClick={() => openGenModal('phone')}>
+          <Button size="sm" variant="outline" className={`gap-1 text-xs flex-1 ${phoneDone ? 'opacity-50' : ''}`} onClick={() => openGenModal('phone')}>
             <Phone size={12} /> Generate Phone Touch
           </Button>
         </div>
@@ -372,31 +367,36 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
                   ⛔ Email disabled — contact is unsubscribed. Use LinkedIn or Phone.
                 </p>
               )}
-              <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex flex-wrap gap-2 justify-end items-center">
                 <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy()}>
                   {copied ? <CheckIcon size={12} /> : <Copy size={12} />}
                   {copied ? 'Copied!' : 'Copy'}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1 text-xs"
-                  onClick={openOutlookWeb}
-                  disabled={isUnsubscribed || !contactEmail}
-                  title={!contactEmail ? 'No email on file' : undefined}
-                >
-                  <ExternalLink size={12} /> Open in Outlook Web
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1 text-xs"
-                  onClick={openMailto}
-                  disabled={isUnsubscribed || !contactEmail}
-                  title={!contactEmail ? 'No email on file' : undefined}
-                >
-                  <Mail size={12} /> Open with mailto
-                </Button>
+                {contactEmail && !isUnsubscribed && (
+                  <>
+                    <a
+                      href={`ms-outlook://compose?to=${encodeURIComponent(contactEmail)}&subject=${encodeURIComponent(getEmailSubject())}&body=${encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'))}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
+                      onClick={() => autoCheckChannel()}
+                    >
+                      <ExternalLink size={12} /> Open in Outlook
+                    </a>
+                    <a
+                      href={`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(contactEmail)}&subject=${encodeURIComponent(getEmailSubject())}&body=${encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'))}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
+                      onClick={() => autoCheckChannel()}
+                    >
+                      <ExternalLink size={12} /> Outlook Web
+                    </a>
+                  </>
+                )}
+                {!contactEmail && !isUnsubscribed && (
+                  <span className="text-[10px] text-muted-foreground italic">No email on file</span>
+                )}
               </div>
             </div>
           )}
@@ -404,23 +404,29 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
           {/* LinkedIn actions */}
           {modalChannel === 'linkedin' && (
             <div className="space-y-2">
-              <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex flex-wrap gap-2 justify-end items-center">
                 <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy()}>
                   {copied ? <CheckIcon size={12} /> : <Copy size={12} />}
                   {copied ? 'Copied!' : 'Copy'}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1 text-xs"
-                  onClick={() => window.open(contactLinkedIn, '_blank')}
-                  disabled={!contactLinkedIn}
-                >
-                  <Linkedin size={12} /> Open LinkedIn Profile
-                </Button>
+                {contactLinkedIn ? (
+                  <a
+                    href={contactLinkedIn}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
+                    onClick={() => autoCheckChannel()}
+                  >
+                    <Linkedin size={12} /> Open LinkedIn Profile
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-muted text-muted-foreground cursor-not-allowed">
+                    <Linkedin size={12} /> Open LinkedIn Profile
+                  </span>
+                )}
               </div>
               {!contactLinkedIn && (
-                <p className="text-[10px] text-muted-foreground italic text-right">No LinkedIn profile URL on file.</p>
+                <p className="text-[10px] text-muted-foreground italic text-right">Add profile URL to enable.</p>
               )}
             </div>
           )}
@@ -428,7 +434,7 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
           {/* Phone Touch actions */}
           {modalChannel === 'phone' && (
             <div className="space-y-2">
-              <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex flex-wrap gap-2 justify-end items-center">
                 <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy(getPhoneParts().bullets)}>
                   <Copy size={12} /> Copy Bullets
                 </Button>
@@ -437,19 +443,18 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
                     <Copy size={12} /> Copy Voicemail
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1 text-xs"
-                  onClick={() => window.open(`tel:${contactPhone}`, '_self')}
-                  disabled={!contactPhone}
-                >
-                  <PhoneCall size={12} /> Dial
-                </Button>
+                {contactPhone ? (
+                  <a
+                    href={`tel:${contactPhone}`}
+                    className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
+                    onClick={() => autoCheckChannel()}
+                  >
+                    <PhoneCall size={12} /> Dial
+                  </a>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground italic">No phone number on file</span>
+                )}
               </div>
-              {!contactPhone && (
-                <p className="text-[10px] text-muted-foreground italic text-right">No phone number on file.</p>
-              )}
             </div>
           )}
         </DialogContent>
