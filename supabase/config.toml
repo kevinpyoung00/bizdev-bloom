@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.generate-drip]
 verify_jwt = false
+
+[functions.company-scrape]
+verify_jwt = false

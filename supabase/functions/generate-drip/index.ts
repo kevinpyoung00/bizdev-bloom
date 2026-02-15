@@ -83,7 +83,7 @@ function simpleHash(s: string): number {
 /* ── Week 1 prompt builder ── */
 
 function buildWeek1Prompt(channel: string, data: any): string {
-  const { company_name, industry_label, industry_key, hq_city, hq_state, employee_count, persona, signals, contact, manual_notes_for_ai, current_carrier } = data;
+  const { company_name, industry_label, industry_key, hq_city, hq_state, employee_count, persona, signals, contact, manual_notes_for_ai, current_carrier, company_scrape } = data;
 
   const strongest = pickStrongestSignal(signals);
   const location = [hq_city, hq_state].filter(Boolean).join(", ");
@@ -99,6 +99,9 @@ function buildWeek1Prompt(channel: string, data: any): string {
   if (channel === "email") {
     const notesLine = manual_notes_for_ai ? `\n- Additional context (weave naturally, one sentence max): "${manual_notes_for_ai}"` : "";
     const carrierLine = current_carrier ? `\n- Current benefits carrier: ${current_carrier}` : "";
+    const scrapeLine = company_scrape?.summary ? `\n- Company Intel (from website): ${company_scrape.summary}` : "";
+    const anglesLine = company_scrape?.outreach_angles?.length ? `\n- AI-suggested outreach angles: ${company_scrape.outreach_angles.join("; ")}` : "";
+    const scrapeFactsLine = company_scrape?.key_facts?.length ? `\n- Key company facts: ${company_scrape.key_facts.join("; ")}` : "";
     return `You are a business development executive at OneDigital, a top employee benefits advisory firm.
 
 Write a personalized cold email (4-6 sentences) for Week 1 of a 12-week outreach cadence.
@@ -110,7 +113,7 @@ LEAD CONTEXT:
 - Size: ${sizeRange}
 - Persona: ${persona}
 - Strongest Signal: ${strongest.label} (type: ${strongest.type})
-- All Signals: ${JSON.stringify(signals || {})}${carrierLine}${notesLine}
+- All Signals: ${JSON.stringify(signals || {})}${carrierLine}${notesLine}${scrapeLine}${anglesLine}${scrapeFactsLine}
 
 STRUCTURE (follow this order):
 1. **Signal-anchored opener**: Lead with "${strongest.label}" — make it the first sentence hook.
@@ -167,7 +170,7 @@ OUTPUT FORMAT (JSON):
 /* ── Weeks 2-12 prompt builder ── */
 
 function buildDripPrompt(week: number, channel: string, data: any): string {
-  const { company_name, industry_label, industry_key, persona, signals, hq_city, hq_state, employee_count, contact, manual_notes_for_ai } = data;
+  const { company_name, industry_label, industry_key, persona, signals, hq_city, hq_state, employee_count, contact, manual_notes_for_ai, company_scrape } = data;
   const theme = WEEK_THEMES[week] || "Follow-up";
   const location = [hq_city, hq_state].filter(Boolean).join(", ");
   const sizeRange = employee_count ? `${employee_count}-employee` : "mid-market";
@@ -179,13 +182,15 @@ function buildDripPrompt(week: number, channel: string, data: any): string {
 
   if (channel === "email") {
     const notesLine = manual_notes_for_ai ? `\nADDITIONAL CONTEXT (weave naturally, one sentence max): "${manual_notes_for_ai}"` : "";
+    const companyIntel = company_scrape?.summary ? `\nCOMPANY INTEL (from website — use to personalize): ${company_scrape.summary}` : "";
+    const angles = company_scrape?.outreach_angles?.length ? `\nOUTREACH ANGLES: ${company_scrape.outreach_angles.join("; ")}` : "";
     return `You are a business development executive at OneDigital (employee benefits advisory).
 
 Write a follow-up email (3-6 sentences) for Week ${week} of a 12-week cadence.
 
 THEME: ${theme}
 LEAD: ${company_name}, ${industry_label || "General"} (${industry_key || "general_exec"}), ${sizeRange}, ${location || "US"}
-PERSONA: ${persona}${notesLine}
+PERSONA: ${persona}${notesLine}${companyIntel}${angles}
 ${referenceSignals ? `SIGNALS (reference naturally): ${JSON.stringify(signals)}` : ""}
 
 STRUCTURE:

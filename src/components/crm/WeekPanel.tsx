@@ -39,6 +39,7 @@ export interface WeekPanelLeadData {
   reach: { hasEmail: boolean; hasPhone: boolean; hasLinkedIn: boolean };
   _rawSignals?: import('@/types/crm').ContactSignals | null;
   manual_notes_for_ai?: string;
+  company_scrape?: { summary?: string; key_facts?: string[]; outreach_angles?: string[]; pain_points?: string[]; scrapedAt?: string };
 }
 
 interface Props {

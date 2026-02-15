@@ -111,6 +111,14 @@ export function createEmptySignals(): ContactSignals {
   };
 }
 
+export interface CompanyScrapeData {
+  summary?: string;
+  key_facts?: string[];
+  outreach_angles?: string[];
+  pain_points?: string[];
+  scrapedAt?: string;
+}
+
 export interface Contact {
   id: string;
   firstName: string;
@@ -135,6 +143,8 @@ export interface Contact {
   notes: string;
   manualNotesForAI: string;
   signals: ContactSignals;
+  companyScrape?: CompanyScrapeData;
+  website?: string;
   weekProgress: WeekProgress[];
   touchLogs: TouchLog[];
 }
