@@ -450,9 +450,10 @@ Deno.serve(async (req) => {
         if (match) {
           s.reasons.lead_signals.carrier_change = {
             recent: true,
+            former_carrier: null,
             new_carrier: match.carrier,
+            days_ago: 0,
             source: "news",
-            days_ago: null,
           };
         }
       }
