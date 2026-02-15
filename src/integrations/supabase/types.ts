@@ -57,8 +57,12 @@ export type Database = {
       }
       accounts: {
         Row: {
+          canonical_company_name: string | null
           created_at: string
+          d365_account_id: string | null
+          d365_last_activity: string | null
           d365_owner_name: string | null
+          d365_status: string
           disposition: string
           domain: string | null
           employee_count: number | null
@@ -70,8 +74,10 @@ export type Database = {
           id: string
           industry: string | null
           lead_score: number | null
+          merge_keys: Json | null
           naics_code: string | null
           name: string
+          needs_review: boolean
           notes: string | null
           revenue_range: string | null
           source: string | null
@@ -83,8 +89,12 @@ export type Database = {
           zywave_id: string | null
         }
         Insert: {
+          canonical_company_name?: string | null
           created_at?: string
+          d365_account_id?: string | null
+          d365_last_activity?: string | null
           d365_owner_name?: string | null
+          d365_status?: string
           disposition?: string
           domain?: string | null
           employee_count?: number | null
@@ -96,8 +106,10 @@ export type Database = {
           id?: string
           industry?: string | null
           lead_score?: number | null
+          merge_keys?: Json | null
           naics_code?: string | null
           name: string
+          needs_review?: boolean
           notes?: string | null
           revenue_range?: string | null
           source?: string | null
@@ -109,8 +121,12 @@ export type Database = {
           zywave_id?: string | null
         }
         Update: {
+          canonical_company_name?: string | null
           created_at?: string
+          d365_account_id?: string | null
+          d365_last_activity?: string | null
           d365_owner_name?: string | null
+          d365_status?: string
           disposition?: string
           domain?: string | null
           employee_count?: number | null
@@ -122,8 +138,10 @@ export type Database = {
           id?: string
           industry?: string | null
           lead_score?: number | null
+          merge_keys?: Json | null
           naics_code?: string | null
           name?: string
+          needs_review?: boolean
           notes?: string | null
           revenue_range?: string | null
           source?: string | null
@@ -305,6 +323,7 @@ export type Database = {
           enrichment_log: Json | null
           first_name: string
           id: string
+          import_log: Json | null
           is_primary: boolean | null
           last_name: string
           linkedin_url: string | null
@@ -322,6 +341,7 @@ export type Database = {
           enrichment_log?: Json | null
           first_name: string
           id?: string
+          import_log?: Json | null
           is_primary?: boolean | null
           last_name: string
           linkedin_url?: string | null
@@ -339,6 +359,7 @@ export type Database = {
           enrichment_log?: Json | null
           first_name?: string
           id?: string
+          import_log?: Json | null
           is_primary?: boolean | null
           last_name?: string
           linkedin_url?: string | null

@@ -12,7 +12,7 @@ import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
 import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play, Pencil, Save } from 'lucide-react';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
-import D365OwnerBadge from '@/components/lead-engine/D365OwnerBadge';
+import D365StatusBadge from '@/components/lead-engine/D365StatusBadge';
 import { toast } from 'sonner';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
 import DripWeekPanel from '@/components/lead-engine/DripWeekPanel';
@@ -219,7 +219,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               </div>
             ) : (
               <>
-                <D365OwnerBadge ownerName={(account as any).d365_owner_name} />
+                <D365StatusBadge status={(account as any).d365_status} ownerName={(account as any).d365_owner_name} d365AccountId={(account as any).d365_account_id} />
                 <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setD365Draft((account as any).d365_owner_name || ''); setEditingD365(true); }}>
                   <Pencil size={11} />
                 </Button>

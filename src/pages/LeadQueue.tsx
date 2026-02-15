@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Download, Eye, Loader2, CheckCircle2, X, Filter } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { useLeadQueue, useRunScoring, useAccountContacts } from '@/hooks/useLeadEngine';
+import { useLeadQueue, useRunScoring } from '@/hooks/useLeadEngine';
 import { useClaimLead, useRejectLead, useMarkUploaded, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -16,9 +17,12 @@ import * as XLSX from 'xlsx';
 import AccountDrawer from '@/components/lead-engine/AccountDrawer';
 import { DualStarsBadge, StarsLegend } from '@/components/lead-engine/DualStarsBadge';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
-import D365OwnerBadge from '@/components/lead-engine/D365OwnerBadge';
+import D365StatusBadge from '@/components/lead-engine/D365StatusBadge';
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
+import { exportD365CheckCSV, ImportD365Results } from '@/components/lead-engine/D365ExportImport';
+import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
+import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 
 async function exportClaimedExcel(leads: LeadWithAccount[]) {
@@ -63,7 +67,6 @@ async function exportClaimedExcel(leads: LeadWithAccount[]) {
   XLSX.writeFile(wb, `d365-export-${new Date().toISOString().split('T')[0]}.xlsx`);
   toast.success(`Exported ${claimed.length} claimed leads (${rows.length} rows)`);
 
-  // Audit
   await supabase.from('audit_log').insert({
     actor: 'user', action: 'export_claimed',
     entity_type: 'lead_queue',
@@ -81,12 +84,16 @@ export default function LeadQueue() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [hideD365Owned, setHideD365Owned] = useState(false);
-  const [showUnclaimedOnly, setShowUnclaimedOnly] = useState(false);
+  const [hideOwned, setHideOwned] = useState(false);
+  const [showNeedsReviewOnly, setShowNeedsReviewOnly] = useState(false);
+  const [importD365Open, setImportD365Open] = useState(false);
+  const [multiImportOpen, setMultiImportOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('queue');
 
   const filteredLeads = leads.filter(l => {
-    if (hideD365Owned && l.account.d365_owner_name) return false;
-    if (showUnclaimedOnly && l.account.d365_owner_name) return false;
+    const d365Status = (l.account as any).d365_status || 'unknown';
+    if (hideOwned && d365Status === 'owned') return false;
+    if (showNeedsReviewOnly && !(l.account as any).needs_review) return false;
     return true;
   });
 
@@ -118,7 +125,11 @@ export default function LeadQueue() {
 
   const handleClaim = (lead: LeadWithAccount, e: React.MouseEvent) => {
     e.stopPropagation();
-    const primaryContact = undefined; // Will be detected from contacts
+    const d365Status = (lead.account as any).d365_status || 'unknown';
+    if (d365Status !== 'unowned' && d365Status !== 'unknown') {
+      toast.error('Only unowned/unknown accounts can be claimed');
+      return;
+    }
     claimLead.mutate({
       leadId: lead.id,
       contactTitle: undefined,
@@ -131,6 +142,30 @@ export default function LeadQueue() {
     setRejectingId(null);
   };
 
+  const handleNeedsReview = async (lead: LeadWithAccount, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await supabase.from('accounts').update({ needs_review: true } as any).eq('id', lead.account.id);
+    toast.success('Sent to Needs Review');
+  };
+
+  const handleClaimAllVisible = () => {
+    const claimable = filteredLeads.filter(l => {
+      const d365Status = (l.account as any).d365_status || 'unknown';
+      const claimStatus = (l as any).claim_status || 'new';
+      return d365Status === 'unowned' && claimStatus === 'new';
+    });
+    if (claimable.length === 0) { toast.info('No claimable leads visible'); return; }
+    for (const lead of claimable) {
+      claimLead.mutate({
+        leadId: lead.id,
+        contactTitle: undefined,
+        accountIndustry: lead.account.industry || undefined,
+      });
+    }
+  };
+
+  const needsReviewCount = leads.filter(l => (l.account as any).needs_review).length;
+
   return (
     <Layout>
       <div className="p-6 space-y-6">
@@ -138,137 +173,189 @@ export default function LeadQueue() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Lead Queue</h1>
             <p className="text-sm text-muted-foreground">
-              Today's ranked leads — {filteredLeads.length} of {leads.length} companies · Claim → Export → Upload → Campaign
+              Today's ranked leads — {filteredLeads.length} of {leads.length} companies · Export → D365 Check → Import Results → Triage
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
               {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : null}
               Run Scoring
             </Button>
+            <Button variant="outline" size="sm" onClick={() => exportD365CheckCSV(leads)}>
+              <Download size={16} className="mr-1" /> Export to D365 Check
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setImportD365Open(true)}>
+              <Upload size={16} className="mr-1" /> Import D365 Results
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setMultiImportOpen(true)}>
+              <FileUp size={16} className="mr-1" /> Multi-Source Import
+            </Button>
             <Button variant="outline" size="sm" onClick={() => exportClaimedExcel(leads)}>
-              <Download size={16} className="mr-1" /> Export Claimed → Excel
+              <Download size={16} className="mr-1" /> Export Claimed
             </Button>
             <Button variant="outline" size="sm" onClick={handleMarkUploaded} disabled={markUploaded.isPending || selectedIds.size === 0}>
               {markUploaded.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <CheckCircle2 size={16} className="mr-1" />}
-              Mark as Uploaded
+              Mark Uploaded
             </Button>
           </div>
         </div>
 
-        <StarsLegend />
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="queue">Lead Queue</TabsTrigger>
+            <TabsTrigger value="needs-review" className="flex items-center gap-1">
+              Needs Review
+              {needsReviewCount > 0 && (
+                <Badge variant="destructive" className="text-[9px] px-1.5 py-0 ml-1">{needsReviewCount}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-        {/* D365 Filters */}
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <Switch checked={hideD365Owned} onCheckedChange={setHideD365Owned} id="hide-d365" />
-            <label htmlFor="hide-d365" className="text-xs text-muted-foreground cursor-pointer">Hide D365-owned</label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={showUnclaimedOnly} onCheckedChange={setShowUnclaimedOnly} id="unclaimed-only" />
-            <label htmlFor="unclaimed-only" className="text-xs text-muted-foreground cursor-pointer">Unclaimed in D365 only</label>
-          </div>
-        </div>
+          <TabsContent value="queue" className="space-y-4">
+            <StarsLegend />
 
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
-                  </TableHead>
-                  <TableHead className="w-14">Rank</TableHead>
-                  <TableHead className="w-28">Priority</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Industry</TableHead>
-                  <TableHead className="w-20">Emp.</TableHead>
-                  <TableHead className="w-16">Region</TableHead>
-                  <TableHead>Signals</TableHead>
-                   <TableHead className="w-32">Suggested Persona</TableHead>
-                  <TableHead className="w-32">D365</TableHead>
-                  <TableHead className="w-36">Status</TableHead>
-                  <TableHead className="w-32">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
-                ) : filteredLeads.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">{leads.length === 0 ? 'No leads yet. Click "Run Scoring" to generate today\'s queue.' : 'No leads match current filters.'}</TableCell></TableRow>
-                ) : (
-                  filteredLeads.map((lead) => {
-                    const claimStatus = (lead as any).claim_status || 'new';
-                    return (
-                      <TableRow
-                        key={lead.id}
-                        className={`cursor-pointer ${selectedIds.has(lead.id) ? 'bg-accent/50' : ''}`}
-                        onClick={() => toggleSelect(lead.id)}
-                      >
-                        <TableCell onClick={e => e.stopPropagation()}>
-                          <Checkbox checked={selectedIds.has(lead.id)} onCheckedChange={() => toggleSelect(lead.id)} />
-                        </TableCell>
-                        <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
-                        <TableCell><DualStarsBadge lead={lead} /></TableCell>
-                        <TableCell className="font-medium text-foreground">{lead.account.name}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{lead.account.industry || '—'}</TableCell>
-                        <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
-                        <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.reason?.lead_signals || lead.account.triggers)} /></TableCell>
-                        <TableCell>
-                          <SuggestedPersonaBadge
-                            employeeCount={lead.account.employee_count}
-                            industryKey={lead.industry_key}
-                            signals={lead.reason}
-                            companyName={lead.account.name}
-                            zywaveId={lead.account.zywave_id}
-                            variant="compact"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <D365OwnerBadge ownerName={lead.account.d365_owner_name} />
-                        </TableCell>
-                        <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
-                        <TableCell onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-1">
-                            {claimStatus === 'new' && (
-                              <>
-                                <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
-                                  Claim
-                                </Button>
-                                {rejectingId === lead.id ? (
-                                  <Select onValueChange={(v) => handleReject(lead.id, v)}>
-                                    <SelectTrigger className="h-7 w-24 text-[10px]">
-                                      <SelectValue placeholder="Reason" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {REJECT_REASONS.map(r => (
-                                        <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setRejectingId(lead.id)}>
-                                    <X size={14} />
-                                  </Button>
+            {/* Filters */}
+            <div className="flex items-center gap-6 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Switch checked={hideOwned} onCheckedChange={setHideOwned} id="hide-owned" />
+                <label htmlFor="hide-owned" className="text-xs text-muted-foreground cursor-pointer">Hide Owned</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={showNeedsReviewOnly} onCheckedChange={setShowNeedsReviewOnly} id="needs-review-only" />
+                <label htmlFor="needs-review-only" className="text-xs text-muted-foreground cursor-pointer">Show Needs Review only</label>
+              </div>
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={handleClaimAllVisible}>
+                <CheckCircle2 size={12} className="mr-1" /> Claim all visible claimable
+              </Button>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+                      </TableHead>
+                      <TableHead className="w-14">Rank</TableHead>
+                      <TableHead className="w-28">Priority</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Industry</TableHead>
+                      <TableHead className="w-20">Emp.</TableHead>
+                      <TableHead className="w-16">Region</TableHead>
+                      <TableHead>Signals</TableHead>
+                      <TableHead className="w-32">Suggested Persona</TableHead>
+                      <TableHead className="w-44">D365 Status</TableHead>
+                      <TableHead className="w-36">Status</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
+                    ) : filteredLeads.length === 0 ? (
+                      <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">{leads.length === 0 ? 'No leads yet. Click "Run Scoring" to generate today\'s queue.' : 'No leads match current filters.'}</TableCell></TableRow>
+                    ) : (
+                      filteredLeads.map((lead) => {
+                        const claimStatus = (lead as any).claim_status || 'new';
+                        const d365Status = (lead.account as any).d365_status || 'unknown';
+                        return (
+                          <TableRow
+                            key={lead.id}
+                            className={`cursor-pointer ${selectedIds.has(lead.id) ? 'bg-accent/50' : ''}`}
+                            onClick={() => toggleSelect(lead.id)}
+                          >
+                            <TableCell onClick={e => e.stopPropagation()}>
+                              <Checkbox checked={selectedIds.has(lead.id)} onCheckedChange={() => toggleSelect(lead.id)} />
+                            </TableCell>
+                            <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
+                            <TableCell><DualStarsBadge lead={lead} /></TableCell>
+                            <TableCell>
+                              <div>
+                                <span className="font-medium text-foreground">{lead.account.name}</span>
+                                {(lead.account as any).canonical_company_name && (
+                                  <span className="block text-[10px] text-muted-foreground">{(lead.account as any).canonical_company_name}</span>
                                 )}
-                              </>
-                            )}
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleView(lead)}>
-                              <Eye size={14} />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{lead.account.industry || '—'}</TableCell>
+                            <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
+                            <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
+                            <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.reason?.lead_signals || lead.account.triggers)} /></TableCell>
+                            <TableCell>
+                              <SuggestedPersonaBadge
+                                employeeCount={lead.account.employee_count}
+                                industryKey={lead.industry_key}
+                                signals={lead.reason}
+                                companyName={lead.account.name}
+                                zywaveId={lead.account.zywave_id}
+                                variant="compact"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <D365StatusBadge
+                                status={d365Status}
+                                ownerName={lead.account.d365_owner_name}
+                                d365AccountId={(lead.account as any).d365_account_id}
+                              />
+                            </TableCell>
+                            <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
+                            <TableCell onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center gap-1">
+                                {claimStatus === 'new' && (
+                                  <>
+                                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
+                                      Claim
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-warning" title="Needs Review" onClick={(e) => handleNeedsReview(lead, e)}>
+                                      <AlertTriangle size={14} />
+                                    </Button>
+                                    {rejectingId === lead.id ? (
+                                      <Select onValueChange={(v) => handleReject(lead.id, v)}>
+                                        <SelectTrigger className="h-7 w-24 text-[10px]">
+                                          <SelectValue placeholder="Reason" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {REJECT_REASONS.map(r => (
+                                            <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setRejectingId(lead.id)}>
+                                        <X size={14} />
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleView(lead)}>
+                                  <Eye size={14} />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="needs-review">
+            <Card>
+              <CardContent className="p-0">
+                <NeedsReviewTab />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
+
       <AccountDrawer lead={selectedLead} open={drawerOpen} onOpenChange={setDrawerOpen} />
+      <ImportD365Results open={importD365Open} onOpenChange={setImportD365Open} />
+      <MultiSourceImporter open={multiImportOpen} onOpenChange={setMultiImportOpen} />
     </Layout>
   );
 }
