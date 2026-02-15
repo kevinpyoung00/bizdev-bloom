@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { getWeekTheme } from '@/lib/weekThemes';
 import { pickStrongestSignal, hasRecentSignals } from '@/lib/signalPicker';
+import SignalChips, { buildChipsFromSignals } from '@/components/crm/SignalChips';
 
 const outcomes: (TouchOutcome | '')[] = ['', 'No Response', 'Positive Reply', 'Negative Reply', 'Meeting Booked', 'Bad Fit', 'Bounced'];
 
@@ -34,6 +35,7 @@ export interface WeekPanelLeadData {
     csuite: { role?: string; days_ago?: number };
   };
   reach: { hasEmail: boolean; hasPhone: boolean; hasLinkedIn: boolean };
+  _rawSignals?: import('@/types/crm').ContactSignals | null;
 }
 
 interface Props {
@@ -310,6 +312,13 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
       {/* Unsubscribed hint */}
       {isUnsubscribed && (
         <p className="text-[10px] text-destructive mb-2 italic">⛔ Contact is unsubscribed — email suppressed.</p>
+      )}
+
+      {/* Signal Preview Chips */}
+      {leadData?.signals && (week === 1 || (week <= 3 && hasRecentSignals(leadData.signals))) && (
+        <div className="mb-2">
+          <SignalChips chips={buildChipsFromSignals(leadData._rawSignals)} />
+        </div>
       )}
 
       {/* Theme info */}
