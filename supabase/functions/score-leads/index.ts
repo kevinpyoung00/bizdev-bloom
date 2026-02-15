@@ -449,7 +449,8 @@ Deno.serve(async (req) => {
         const match = proximityMatch(scanText, carrierNames, carrierPhrases);
         if (match) {
           s.reasons.lead_signals.carrier_change = {
-            carrier: match.carrier,
+            recent: true,
+            new_carrier: match.carrier,
             source: "news",
             days_ago: null,
           };

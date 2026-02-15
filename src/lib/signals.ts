@@ -8,7 +8,7 @@ export type LeadSignals = {
   triggers?: string[];
   milestones?: { hit_50?: boolean; hit_75?: boolean; hit_100?: boolean; hit_150?: boolean };
   news?: { keywords?: string[]; last_mention_days_ago?: number };
-  carrier_change?: { recent?: boolean; former_carrier?: string; new_carrier?: string; days_ago?: number };
+  carrier_change?: { recent?: boolean; former_carrier?: string; new_carrier?: string; days_ago?: number; source?: 'zywave' | 'news' | 'career_page' | 'manual' | 'other' };
   talent_risk?: { risk?: boolean; review_change_direction?: 'up' | 'down'; days_ago?: number };
 };
 
