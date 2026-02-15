@@ -160,6 +160,86 @@ function detectTriggers(triggers: any): { hiring: boolean; role_change: boolean;
   return result;
 }
 
+// ─── Normalize triggers → LeadSignals for UI and generators ───
+
+function normalizeToLeadSignals(triggers: any, employeeCount: number | null): any {
+  if (!triggers) return {};
+  const signals: any = {};
+
+  // Funding
+  const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
+  if (funding && typeof funding === "object") {
+    const mo = funding.months_ago ?? 12;
+    signals.funding = {
+      stage: funding.stage || funding.round || "Series A",
+      days_ago: mo * 30,
+    };
+  } else if (funding === true) {
+    signals.funding = { stage: "Series A", days_ago: 90 };
+  }
+
+  // HR Role Change
+  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
+  if (rc) {
+    const items = Array.isArray(rc) ? rc : [rc];
+    let bestItem: any = null;
+    let bestDays = 999;
+    for (const item of items) {
+      const combined = `${(item.title || "").toLowerCase()} ${(item.department || "").toLowerCase()}`;
+      if (HR_KEYWORDS.some((kw) => combined.includes(kw))) {
+        const d = item.days_ago ?? 999;
+        if (d < bestDays) { bestDays = d; bestItem = item; }
+      }
+    }
+    if (bestItem) {
+      signals.hr_change = { title: bestItem.title || "HR leader", days_ago: bestDays < 999 ? bestDays : undefined };
+    }
+  }
+
+  // C-Suite
+  const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
+  if (cs) {
+    const role = cs.role || cs.title || "Other";
+    const mo = cs.months_ago ?? cs.recency_months ?? null;
+    signals.csuite = { role, days_ago: mo !== null ? mo * 30 : 90 };
+  }
+
+  // Hiring
+  const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
+  if (openRoles >= 3) {
+    const intensity = openRoles >= 10 ? "Large" : openRoles >= 6 ? "Medium" : "Small";
+    signals.hiring = { jobs_60d: openRoles, intensity };
+  }
+
+  // Triggers array (expansion, M&A, restructure, layoffs, new product, milestones)
+  const triggerLabels: string[] = [];
+  if (triggers.expansion_new_location || triggers.new_office) triggerLabels.push("New location");
+  if (triggers.mergers_acquisitions || triggers.m_and_a || triggers.ma) triggerLabels.push("M&A");
+  if (triggers.restructure || triggers.restructuring) triggerLabels.push("Restructure");
+  if (triggers.layoffs || triggers.rif) triggerLabels.push("Layoffs");
+  if (triggers.new_product || triggers.product_launch) triggerLabels.push("New product launch");
+  if (triggerLabels.length > 0) signals.triggers = triggerLabels;
+
+  // Headcount milestones
+  if (employeeCount != null) {
+    const milestones: any = {};
+    if (employeeCount >= 50) milestones.hit_50 = true;
+    if (employeeCount >= 75) milestones.hit_75 = true;
+    if (employeeCount >= 100) milestones.hit_100 = true;
+    if (employeeCount >= 150) milestones.hit_150 = true;
+    if (Object.keys(milestones).length > 0) signals.milestones = milestones;
+  }
+
+  // News keywords
+  const news = triggers.news ?? triggers.press ?? triggers.media;
+  if (news) {
+    const kw = Array.isArray(news) ? news : (news.keywords || []);
+    if (kw.length > 0) signals.news = { keywords: kw, last_mention_days_ago: news.days_ago ?? null };
+  }
+
+  return signals;
+}
+
 // ─── Main scoring ───
 
 interface PriorityReason {
@@ -171,6 +251,7 @@ interface PriorityReason {
   contact_linkedin: number;
   guardrail: string | null;
   signals: SignalSizes;
+  lead_signals: any; // Normalized LeadSignals for UI chips and generators
 }
 
 interface ScoredAccount {
@@ -209,12 +290,15 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
   const hasPhone = contacts.some((c) => c.phone) ? 1 : 0;
   const hasLinkedIn = contacts.some((c) => c.linkedin_url) ? 1 : 0;
 
+  const empCount = typeof account.employee_count === "number" ? account.employee_count : null;
+  const leadSignals = normalizeToLeadSignals(triggers, empCount);
+
   return {
     id: account.id,
     name: account.name,
     domain: resolvedDomain,
     industry: account.industry,
-    employee_count: typeof account.employee_count === "number" ? account.employee_count : null,
+    employee_count: empCount,
     hq_state: account.hq_state,
     geography_bucket: geoBucket,
     disposition,
@@ -230,6 +314,7 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
       contact_linkedin: hasLinkedIn,
       guardrail,
       signals: signalSizes,
+      lead_signals: leadSignals,
     },
   };
 }
