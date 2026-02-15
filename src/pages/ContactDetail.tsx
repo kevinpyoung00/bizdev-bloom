@@ -10,6 +10,7 @@ import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Tr
 import { getContactProgress, getHiringIntensity, isHrChangeRecent } from '@/types/crm';
 import { useState, useMemo } from 'react';
 import { detectPersona } from '@/lib/persona';
+import { matchIndustryKey } from '@/lib/industry';
 
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +34,7 @@ export default function ContactDetail() {
       },
       company: {
         name: contact.company,
+        industry_key: matchIndustryKey(contact.industry),
         industry_label: contact.industry,
         hq_city: '',
         hq_state: '',
