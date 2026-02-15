@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon } from 'lucide-react';
+import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, PhoneCall } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { getWeekTheme } from '@/lib/weekThemes';
@@ -225,11 +225,44 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
     setModalOpen(true);
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(modalContent);
+  const handleCopy = (text?: string) => {
+    navigator.clipboard.writeText(text ?? modalContent);
     setCopied(true);
     toast.success('Copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Derived contact info for action buttons
+  const contactEmail = leadData?.contact?.email || '';
+  const contactLinkedIn = leadData?.contact?.linkedin_url || '';
+  const contactPhone = leadData?.contact?.phone || '';
+
+  // Extract subject from email body (first line after "Subject: " or use theme)
+  const getEmailSubject = () => {
+    const subjectMatch = modalContent.match(/^Subject:\s*(.+)$/m);
+    return subjectMatch ? subjectMatch[1].trim() : `Week ${week}: ${theme.theme}`;
+  };
+
+  const getEmailBody = () => {
+    return modalContent.replace(/^Subject:\s*.+\n\n?/m, '');
+  };
+
+  // Split phone touch into bullets and voicemail
+  const getPhoneParts = () => {
+    const parts = modalContent.split(/VOICEMAIL\s*\(.*?\):\s*/i);
+    return { bullets: parts[0]?.trim() || modalContent, voicemail: parts[1]?.trim() || '' };
+  };
+
+  const openOutlookWeb = () => {
+    const subject = encodeURIComponent(getEmailSubject());
+    const body = encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'));
+    window.open(`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(contactEmail)}&subject=${subject}&body=${body}`, '_blank');
+  };
+
+  const openMailto = () => {
+    const subject = encodeURIComponent(getEmailSubject());
+    const body = encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'));
+    window.location.href = `mailto:${contactEmail}?subject=${subject}&body=${body}`;
   };
 
   const channelLabel = modalChannel === 'email' ? 'Email'
@@ -300,8 +333,14 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
         <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openGenModal('email')}>
           <Mail size={12} /> Generate Email
         </Button>
-        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openGenModal('linkedin')}>
+        <Button
+          size="sm"
+          variant={!contactEmail ? 'default' : 'outline'}
+          className={`gap-1 text-xs ${!contactEmail ? 'ring-2 ring-primary/30' : ''}`}
+          onClick={() => openGenModal('linkedin')}
+        >
           <Linkedin size={12} /> Generate LinkedIn Message
+          {!contactEmail && <span className="text-[9px] ml-1 opacity-70">★ Recommended</span>}
         </Button>
         <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openGenModal('phone')}>
           <Phone size={12} /> Generate Phone Touch
@@ -319,12 +358,95 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
             onChange={(e) => setModalContent(e.target.value)}
             className="text-xs min-h-[160px] resize-y font-sans"
           />
-          <div className="flex justify-end">
-            <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={handleCopy}>
-              {copied ? <CheckIcon size={12} /> : <Copy size={12} />}
-              {copied ? 'Copied!' : 'Copy to Clipboard'}
-            </Button>
-          </div>
+
+          {/* Email actions */}
+          {modalChannel === 'email' && (
+            <div className="space-y-2">
+              {isUnsubscribed && (
+                <p className="text-xs text-destructive bg-destructive/10 rounded px-2 py-1.5">
+                  ⛔ Email disabled — contact is unsubscribed. Use LinkedIn or Phone.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 justify-end">
+                <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy()}>
+                  {copied ? <CheckIcon size={12} /> : <Copy size={12} />}
+                  {copied ? 'Copied!' : 'Copy'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  onClick={openOutlookWeb}
+                  disabled={isUnsubscribed || !contactEmail}
+                  title={!contactEmail ? 'No email on file' : undefined}
+                >
+                  <ExternalLink size={12} /> Open in Outlook Web
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  onClick={openMailto}
+                  disabled={isUnsubscribed || !contactEmail}
+                  title={!contactEmail ? 'No email on file' : undefined}
+                >
+                  <Mail size={12} /> Open with mailto
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* LinkedIn actions */}
+          {modalChannel === 'linkedin' && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2 justify-end">
+                <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy()}>
+                  {copied ? <CheckIcon size={12} /> : <Copy size={12} />}
+                  {copied ? 'Copied!' : 'Copy'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  onClick={() => window.open(contactLinkedIn, '_blank')}
+                  disabled={!contactLinkedIn}
+                >
+                  <Linkedin size={12} /> Open LinkedIn Profile
+                </Button>
+              </div>
+              {!contactLinkedIn && (
+                <p className="text-[10px] text-muted-foreground italic text-right">No LinkedIn profile URL on file.</p>
+              )}
+            </div>
+          )}
+
+          {/* Phone Touch actions */}
+          {modalChannel === 'phone' && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2 justify-end">
+                <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy(getPhoneParts().bullets)}>
+                  <Copy size={12} /> Copy Bullets
+                </Button>
+                {getPhoneParts().voicemail && (
+                  <Button size="sm" variant="secondary" className="gap-1 text-xs" onClick={() => handleCopy(getPhoneParts().voicemail)}>
+                    <Copy size={12} /> Copy Voicemail
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  onClick={() => window.open(`tel:${contactPhone}`, '_self')}
+                  disabled={!contactPhone}
+                >
+                  <PhoneCall size={12} /> Dial
+                </Button>
+              </div>
+              {!contactPhone && (
+                <p className="text-[10px] text-muted-foreground italic text-right">No phone number on file.</p>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
