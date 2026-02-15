@@ -380,17 +380,8 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
                       onClick={() => autoCheckChannel()}
                     >
                       <ExternalLink size={12} /> Open in Outlook
-                    </a>
-                    <a
-                      href={`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(contactEmail)}&subject=${encodeURIComponent(getEmailSubject())}&body=${encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'))}`}
-                      target="_blank"
-                      rel="noopener"
-                      className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
-                      onClick={() => autoCheckChannel()}
-                    >
-                      <ExternalLink size={12} /> Outlook Web
-                    </a>
-                  </>
+                  </a>
+                </>
                 )}
                 {!contactEmail && !isUnsubscribed && (
                   <span className="text-[10px] text-muted-foreground italic">No email on file</span>
