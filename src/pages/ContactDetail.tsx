@@ -7,7 +7,7 @@ import type { WeekPanelLeadData } from '@/components/crm/WeekPanel';
 import ContactForm from '@/components/crm/ContactForm';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ArrowLeft, Calendar, Mail, Linkedin, Phone, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus, ChevronDown, Building2, Zap } from 'lucide-react';
+import { ArrowLeft, Calendar, Mail, Linkedin, Phone, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus, ChevronDown, Building2, Zap, Globe, Loader2, Sparkles, Target } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { getContactProgress, getHiringIntensity } from '@/types/crm';
 import SignalChips, { buildChipsFromSignals } from '@/components/crm/SignalChips';
@@ -15,6 +15,9 @@ import { useState, useMemo } from 'react';
 import { detectPersona } from '@/lib/persona';
 import { matchIndustryKey } from '@/lib/industry';
 import { buildReasonSelectedLine, contactSignalsToLeadSignals } from '@/lib/signals';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { Input } from '@/components/ui/input';
 
 function getEmployeeTier(count: string): string {
   const n = parseInt(count, 10);
@@ -84,11 +87,46 @@ function inferBenefitsPainPoints(contact: any): string[] {
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { contacts, campaigns, bookMeeting, setContactStatus, reactivateContact } = useCrm();
+  const { contacts, campaigns, bookMeeting, setContactStatus, reactivateContact, updateContact } = useCrm();
   const [editing, setEditing] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
+  const [scraping, setScraping] = useState(false);
+  const [scrapeUrl, setScrapeUrl] = useState('');
 
   const contact = contacts.find(c => c.id === id);
+
+  const handleScrape = async () => {
+    if (!contact) return;
+    const url = scrapeUrl.trim() || contact.website;
+    if (!url) {
+      toast.error('Please enter a website URL');
+      return;
+    }
+    setScraping(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('company-scrape', {
+        body: { website: url },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Scrape failed');
+      updateContact(contact.id, {
+        companyScrape: {
+          summary: data.summary,
+          key_facts: data.key_facts || [],
+          outreach_angles: data.outreach_angles || [],
+          pain_points: data.pain_points || [],
+          scrapedAt: new Date().toISOString(),
+        },
+        website: url,
+      } as any);
+      toast.success('Company intel updated from website');
+      setScrapeUrl('');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to scrape website');
+    } finally {
+      setScraping(false);
+    }
+  };
 
   const leadSignals = useMemo(() => contact ? contactSignalsToLeadSignals(contact.signals) : null, [contact]);
   const reasonLine = useMemo(() => buildReasonSelectedLine(leadSignals), [leadSignals]);
@@ -131,6 +169,7 @@ export default function ContactDetail() {
       },
       _rawSignals: contact.signals,
       manual_notes_for_ai: contact.manualNotesForAI,
+      company_scrape: contact.companyScrape,
     };
   }, [contact]);
 
@@ -216,17 +255,33 @@ export default function ContactDetail() {
               <div className="flex items-center gap-2">
                 <Building2 size={14} className="text-primary" />
                 <h3 className="font-semibold text-sm text-card-foreground">Company Overview</h3>
+                {contact.companyScrape?.scrapedAt && (
+                  <Badge variant="secondary" className="text-[10px] gap-1"><Sparkles size={10} /> AI Enriched</Badge>
+                )}
               </div>
               <ChevronDown size={14} className={`text-muted-foreground transition-transform ${overviewOpen ? 'rotate-180' : ''}`} />
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="px-4 pb-4 space-y-3">
-                {/* Company Summary */}
+                {/* Company Summary — scraped or inferred */}
                 <div>
                   <p className="text-sm text-foreground leading-relaxed">
-                    {buildCompanySummary(contact)}
+                    {contact.companyScrape?.summary || buildCompanySummary(contact)}
                   </p>
                 </div>
+
+                {/* Scraped Key Facts */}
+                {contact.companyScrape?.key_facts && contact.companyScrape.key_facts.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Key Facts</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {contact.companyScrape.key_facts.map((fact, i) => (
+                        <li key={i} className="text-xs text-foreground">{fact}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground">Industry</p>
@@ -245,6 +300,7 @@ export default function ContactDetail() {
                     <p className="text-foreground font-medium">{contact.currentCarrier || '—'}</p>
                   </div>
                 </div>
+
                 {/* Growth Indicators */}
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Growth Indicators</p>
@@ -260,14 +316,49 @@ export default function ContactDetail() {
                     )}
                   </div>
                 </div>
-                {/* Inferred Pain Points */}
+
+                {/* Outreach Angles (from scrape) */}
+                {contact.companyScrape?.outreach_angles && contact.companyScrape.outreach_angles.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Target size={10} /> AI-Suggested Outreach Angles</p>
+                    <div className="flex flex-wrap gap-1">
+                      {contact.companyScrape.outreach_angles.map((angle, i) => (
+                        <Badge key={i} variant="outline" className="text-[10px] border-primary/30 text-primary">{angle}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pain Points — scraped or inferred */}
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Likely Benefits Pain Points</p>
                   <div className="flex flex-wrap gap-1">
-                    {painPoints.map((p, i) => (
+                    {(contact.companyScrape?.pain_points && contact.companyScrape.pain_points.length > 0
+                      ? contact.companyScrape.pain_points
+                      : painPoints
+                    ).map((p, i) => (
                       <Badge key={i} variant="outline" className="text-[10px]">{p}</Badge>
                     ))}
                   </div>
+                </div>
+
+                {/* Website Scrape Action */}
+                <div className="pt-2 border-t border-border">
+                  <div className="flex items-center gap-2">
+                    <Globe size={12} className="text-muted-foreground" />
+                    <Input
+                      placeholder={contact.website || 'Enter company website URL...'}
+                      value={scrapeUrl}
+                      onChange={e => setScrapeUrl(e.target.value)}
+                      className="h-7 text-xs flex-1"
+                    />
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleScrape} disabled={scraping}>
+                      {scraping ? <><Loader2 size={12} className="animate-spin" /> Scanning...</> : <><Sparkles size={12} /> {contact.companyScrape ? 'Re-scan' : 'Enrich from Website'}</>}
+                    </Button>
+                  </div>
+                  {contact.companyScrape?.scrapedAt && (
+                    <p className="text-[10px] text-muted-foreground mt-1">Last enriched: {new Date(contact.companyScrape.scrapedAt).toLocaleDateString()}</p>
+                  )}
                 </div>
               </div>
             </CollapsibleContent>
