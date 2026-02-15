@@ -17,6 +17,7 @@ import {
   getSignalStars, computeReachStars, signalStarsDisplay, reachStarsDisplay,
   getPriorityLabel, priorityBadgeColor, signalDetails, classifySignals
 } from '@/lib/leadPriority';
+import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import { detectPersona, PERSONA_LABELS, type PersonaTrack } from '@/lib/persona';
 import { matchIndustryKey, getIndustryLabel } from '@/lib/industry';
 
@@ -199,21 +200,9 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           {/* Signal Details */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-2">Signal Breakdown</h3>
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {['Hiring', 'HR Role Change', 'Funding', 'C-Suite'].map(label => {
-                const key = label === 'HR Role Change' ? 'role_change' : label.toLowerCase().replace('-', '');
-                const active = triggersFired[key as keyof typeof triggersFired];
-                return (
-                  <Badge key={label} variant={active ? 'default' : 'outline'} className={`text-xs ${!active ? 'opacity-40' : ''}`}>
-                    {label}
-                  </Badge>
-                );
-              })}
-            </div>
-            {signals.length > 0 ? (
-              <ul className="space-y-1">{signals.map((s, i) => <li key={i} className="text-sm text-foreground">{s}</li>)}</ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No timing signals detected.</p>
+            <SignalChips chips={buildChipsFromTriggers(account.triggers)} />
+            {signals.length > 0 && (
+              <ul className="space-y-1 mt-3">{signals.map((s, i) => <li key={i} className="text-sm text-foreground">{s}</li>)}</ul>
             )}
           </div>
 

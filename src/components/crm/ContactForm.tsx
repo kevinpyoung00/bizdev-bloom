@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Contact, RolePersona, ContactSource, ContactStatus, FundingStage, CSuiteRole, TriggerTag, ContactSignals, createEmptySignals, getHiringIntensity, isHrChangeRecent } from '@/types/crm';
+import { Contact, RolePersona, ContactSource, ContactStatus, FundingStage, CSuiteRole, TriggerTag, ContactSignals, MilestoneFlags, createEmptySignals, getHiringIntensity, isHrChangeRecent } from '@/types/crm';
 import { useCrm } from '@/store/CrmContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -253,6 +253,48 @@ export default function ContactForm({ open, onOpenChange, editContact }: Props) 
                     {tag}
                   </label>
                 ))}
+              </div>
+            </div>
+
+            {/* Headcount Milestones */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Headcount Milestones</p>
+              <div className="flex flex-wrap gap-3">
+                {([['hit_50', '50 EE'], ['hit_75', '75 EE'], ['hit_100', '100 EE'], ['hit_150', '150 EE']] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <Checkbox
+                      checked={!!signals.milestones?.[key]}
+                      onCheckedChange={(v) => setSignals(prev => ({ ...prev, milestones: { ...prev.milestones, [key]: !!v } }))}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* News / Press */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">News / Press</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Keywords (comma-separated)</Label>
+                  <Input
+                    placeholder="e.g. expansion, layoff, IPO"
+                    value={signals.news?.keywords?.join(', ') || ''}
+                    onChange={e => {
+                      const kw = e.target.value ? e.target.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+                      setSignals(prev => ({ ...prev, news: { ...prev.news, keywords: kw } }));
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Last Mention (days ago)</Label>
+                  <Input
+                    type="number" min={0} placeholder="e.g. 7"
+                    value={signals.news?.last_mention_days_ago ?? ''}
+                    onChange={e => setSignals(prev => ({ ...prev, news: { ...prev.news, last_mention_days_ago: e.target.value ? Number(e.target.value) : null } }))}
+                  />
+                </div>
               </div>
             </div>
           </div>

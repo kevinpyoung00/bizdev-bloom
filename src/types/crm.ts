@@ -43,6 +43,18 @@ export type FundingStage = 'None' | 'Seed' | 'Series A' | 'Series B' | 'Series C
 export type CSuiteRole = 'CEO' | 'CFO' | 'COO' | 'CHRO' | 'Other';
 export type TriggerTag = 'New location' | 'M&A' | 'Restructure' | 'Layoffs' | 'New product launch' | 'Approaching headcount milestone';
 
+export interface MilestoneFlags {
+  hit_50?: boolean;
+  hit_75?: boolean;
+  hit_100?: boolean;
+  hit_150?: boolean;
+}
+
+export interface NewsSignal {
+  keywords?: string[];
+  last_mention_days_ago?: number | null;
+}
+
 export interface ContactSignals {
   funding_stage: FundingStage;
   funding_days_ago: number | null;
@@ -52,6 +64,8 @@ export interface ContactSignals {
   csuite_days_ago: number | null;
   jobs_60d: number | null;
   triggers: TriggerTag[];
+  milestones?: MilestoneFlags;
+  news?: NewsSignal;
 }
 
 export function getHiringIntensity(jobs60d: number | null): string {
@@ -75,6 +89,8 @@ export function createEmptySignals(): ContactSignals {
     csuite_days_ago: null,
     jobs_60d: null,
     triggers: [],
+    milestones: {},
+    news: {},
   };
 }
 
