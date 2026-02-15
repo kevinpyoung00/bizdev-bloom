@@ -3,11 +3,13 @@ import { useCrm } from '@/store/CrmContext';
 import Layout from '@/components/crm/Layout';
 import StatusBadge from '@/components/crm/StatusBadge';
 import WeekPanel from '@/components/crm/WeekPanel';
+import type { WeekPanelLeadData } from '@/components/crm/WeekPanel';
 import ContactForm from '@/components/crm/ContactForm';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Trophy, XCircle } from 'lucide-react';
 import { getContactProgress } from '@/types/crm';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { detectPersona } from '@/lib/persona';
 
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +18,42 @@ export default function ContactDetail() {
   const [editing, setEditing] = useState(false);
 
   const contact = contacts.find(c => c.id === id);
+
+  const leadData: WeekPanelLeadData | undefined = useMemo(() => {
+    if (!contact) return undefined;
+    return {
+      contact: {
+        first_name: contact.firstName,
+        last_name: contact.lastName,
+        full_name: `${contact.firstName} ${contact.lastName}`,
+        email: contact.email,
+        phone: contact.phone,
+        linkedin_url: contact.linkedInUrl,
+        title: contact.title,
+      },
+      company: {
+        name: contact.company,
+        industry_label: contact.industry,
+        hq_city: '',
+        hq_state: '',
+        employee_count: contact.employeeCount,
+        renewal_month: contact.renewalMonth,
+      },
+      persona: detectPersona(contact.title),
+      signals: {
+        funding: {},
+        hiring: {},
+        hr_change: {},
+        csuite: {},
+      },
+      reach: {
+        hasEmail: !!contact.email,
+        hasPhone: !!contact.phone,
+        hasLinkedIn: !!contact.linkedInUrl,
+      },
+    };
+  }, [contact]);
+
   if (!contact) return <Layout><div className="p-6"><p className="text-muted-foreground">Contact not found.</p><Button variant="outline" onClick={() => navigate('/contacts')}>Back</Button></div></Layout>;
 
   const campaign = campaigns.find(c => c.id === contact.campaignId);
@@ -146,6 +184,7 @@ export default function ContactDetail() {
                   notes={wp.notes}
                   isCurrent={week === contact.currentWeek}
                   isPast={week < contact.currentWeek}
+                  leadData={leadData}
                 />
               );
             })}
