@@ -6,6 +6,7 @@ export const DEFAULT_INDUSTRIES: Record<string, string> = {
   advanced_mfg_med_devices: 'Advanced Manufacturing & Medical Devices',
   healthcare_social_assistance: 'Healthcare & Social Assistance',
   higher_ed_nonprofit: 'Higher Education & Nonprofit',
+  cannabis: 'Cannabis',
 };
 
 const INDUSTRY_PATTERNS: Record<string, RegExp> = {
@@ -14,6 +15,7 @@ const INDUSTRY_PATTERNS: Record<string, RegExp> = {
   advanced_mfg_med_devices: /manufactur|medical\s*device|precision|aerospace|defense|industrial|fabricat/i,
   healthcare_social_assistance: /health\s*care|healthcare|hospital|clinic|social\s*(assistance|service)|elder|nurs/i,
   higher_ed_nonprofit: /higher\s*ed|university|college|nonprofit|non-profit|foundation|association|education/i,
+  cannabis: /cannabis|marijuana|dispensar|hemp|weed|THC|CBD/i,
 };
 
 export function matchIndustryKey(rawIndustry?: string | null): string {
