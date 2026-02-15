@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useIndustrySettings } from '@/hooks/useLeadActions';
 import { Loader2 } from 'lucide-react';
 import KeywordListEditor from '@/components/lead-engine/KeywordListEditor';
+import IntegrationsPanel from '@/components/lead-engine/IntegrationsPanel';
 
 export default function LeadSettings() {
   const { data: industries = [], isLoading } = useIndustrySettings();
@@ -132,6 +133,14 @@ export default function LeadSettings() {
         <KeywordListEditor category="carrier_names" />
         <KeywordListEditor category="carrier_change_phrases" />
         <KeywordListEditor category="benefits_hr_keywords" />
+
+        {/* Integrations */}
+        <Separator />
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Integrations</h2>
+          <p className="text-sm text-muted-foreground mb-4">Data enrichment providers used in the pipeline. Enable and add API keys to activate.</p>
+        </div>
+        <IntegrationsPanel />
       </div>
     </Layout>
   );

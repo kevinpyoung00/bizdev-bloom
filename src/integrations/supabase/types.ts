@@ -296,6 +296,7 @@ export type Database = {
           created_at: string
           department: string | null
           email: string | null
+          enrichment_log: Json | null
           first_name: string
           id: string
           is_primary: boolean | null
@@ -312,6 +313,7 @@ export type Database = {
           created_at?: string
           department?: string | null
           email?: string | null
+          enrichment_log?: Json | null
           first_name: string
           id?: string
           is_primary?: boolean | null
@@ -328,6 +330,7 @@ export type Database = {
           created_at?: string
           department?: string | null
           email?: string | null
+          enrichment_log?: Json | null
           first_name?: string
           id?: string
           is_primary?: boolean | null
@@ -476,6 +479,39 @@ export type Database = {
           display_name?: string
           id?: string
           key?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      integration_settings: {
+        Row: {
+          api_key_ref: string | null
+          created_at: string
+          display_name: string
+          enabled: boolean
+          id: string
+          provider: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          api_key_ref?: string | null
+          created_at?: string
+          display_name: string
+          enabled?: boolean
+          id?: string
+          provider: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          api_key_ref?: string | null
+          created_at?: string
+          display_name?: string
+          enabled?: boolean
+          id?: string
+          provider?: string
           sort_order?: number
           updated_at?: string
         }
