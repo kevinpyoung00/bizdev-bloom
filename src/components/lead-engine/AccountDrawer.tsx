@@ -11,6 +11,7 @@ import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
 import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play } from 'lucide-react';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
+import D365OwnerBadge from '@/components/lead-engine/D365OwnerBadge';
 import { toast } from 'sonner';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
 import DripWeekPanel from '@/components/lead-engine/DripWeekPanel';
@@ -198,6 +199,12 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             </div>
           </div>
 
+          {/* D365 Ownership */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">D365:</span>
+            <D365OwnerBadge ownerName={(account as any).d365_owner_name} />
+          </div>
+
           {/* Suggested Persona To Look Up on LinkedIn */}
           <div className="border border-border rounded-lg p-3">
             <SuggestedPersonaBadge
@@ -205,6 +212,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               industryKey={industryKey}
               signals={rawReason}
               companyName={account.name}
+              zywaveId={(account as any).zywave_id}
               variant="full"
             />
           </div>

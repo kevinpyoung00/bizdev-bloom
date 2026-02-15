@@ -8,34 +8,29 @@ interface Props {
   industryKey: string | null | undefined;
   signals?: any;
   companyName?: string;
+  zywaveId?: string | null;
   /** compact = inline chips for table rows; full = labeled block */
   variant?: 'compact' | 'full';
 }
 
-/** Use Google Search to bypass iframe/X-Frame-Options blocking */
 function buildSearchLinks(rec: PersonaRecommendation, companyName: string) {
   const titleKw = buildTitleKeywords(rec);
 
-  // LinkedIn People via Google
-  const linkedInHref = `https://www.google.com/search?q=${encodeURIComponent(
-    `site:linkedin.com/in "${companyName}" ${rec.recommendedTitles.slice(0, 3).join(' OR ')}`
-  )}`;
+  // LinkedIn People Search — direct URL
+  const linkedInHref = `https://www.linkedin.com/search/results/people/?company=${encodeURIComponent(companyName)}&keywords=${encodeURIComponent(titleKw)}`;
 
-  // Sales Navigator via Google (direct SalesNav URLs require auth + don't accept query params reliably)
-  const salesNavHref = `https://www.google.com/search?q=${encodeURIComponent(
-    `site:linkedin.com/sales OR site:linkedin.com/in "${companyName}" ${rec.recommendedTitles.slice(0, 2).join(' OR ')}`
-  )}`;
+  // Sales Navigator — direct search URL
+  const salesNavHref = `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent('company:' + companyName + ' titles:' + titleKw)}`;
 
-  // ZoomInfo company via Google (ZoomInfo requires login, so Google gets us to the right page)
-  const zoomInfoHref = `https://www.google.com/search?q=${encodeURIComponent(
-    `site:zoominfo.com "${companyName}"`
-  )}`;
+  // ZoomInfo — direct search URL
+  const zoomInfoHref = `https://www.zoominfo.com/search?search_query=${encodeURIComponent(companyName)}`;
 
   return { linkedInHref, salesNavHref, zoomInfoHref };
 }
 
-function QuickSearchLinks({ rec, companyName }: { rec: PersonaRecommendation; companyName: string }) {
+function QuickSearchLinks({ rec, companyName, zywaveId }: { rec: PersonaRecommendation; companyName: string; zywaveId?: string | null }) {
   const { linkedInHref, salesNavHref, zoomInfoHref } = buildSearchLinks(rec, companyName);
+  const zywaveHref = zywaveId ? `https://app.zywave.com/company/${zywaveId}` : null;
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -55,11 +50,18 @@ function QuickSearchLinks({ rec, companyName }: { rec: PersonaRecommendation; co
           <ExternalLink size={10} /> ZoomInfo
         </Button>
       </a>
+      {zywaveHref && (
+        <a href={zywaveHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+          <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
+            <ExternalLink size={10} /> Zywave
+          </Button>
+        </a>
+      )}
     </div>
   );
 }
 
-export default function SuggestedPersonaBadge({ employeeCount, industryKey, signals, companyName, variant = 'compact' }: Props) {
+export default function SuggestedPersonaBadge({ employeeCount, industryKey, signals, companyName, zywaveId, variant = 'compact' }: Props) {
   const rec = recommendPersona(employeeCount, industryKey, signals);
 
   if (variant === 'compact') {
@@ -95,7 +97,7 @@ export default function SuggestedPersonaBadge({ employeeCount, industryKey, sign
         <span className="text-[10px] text-muted-foreground font-medium">Recommended Titles: </span>
         <span className="text-[10px] text-foreground">{rec.recommendedTitles.join(', ')}</span>
       </div>
-      {companyName && <QuickSearchLinks rec={rec} companyName={companyName} />}
+      {companyName && <QuickSearchLinks rec={rec} companyName={companyName} zywaveId={zywaveId} />}
     </div>
   );
 }

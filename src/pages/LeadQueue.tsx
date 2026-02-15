@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Download, Eye, Loader2, CheckCircle2, X } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Filter } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useLeadQueue, useRunScoring, useAccountContacts } from '@/hooks/useLeadEngine';
 import { useClaimLead, useRejectLead, useMarkUploaded, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,6 +16,7 @@ import * as XLSX from 'xlsx';
 import AccountDrawer from '@/components/lead-engine/AccountDrawer';
 import { DualStarsBadge, StarsLegend } from '@/components/lead-engine/DualStarsBadge';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
+import D365OwnerBadge from '@/components/lead-engine/D365OwnerBadge';
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
@@ -79,6 +81,14 @@ export default function LeadQueue() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [hideD365Owned, setHideD365Owned] = useState(false);
+  const [showUnclaimedOnly, setShowUnclaimedOnly] = useState(false);
+
+  const filteredLeads = leads.filter(l => {
+    if (hideD365Owned && l.account.d365_owner_name) return false;
+    if (showUnclaimedOnly && l.account.d365_owner_name) return false;
+    return true;
+  });
 
   const handleView = (lead: LeadWithAccount) => { setSelectedLead(lead); setDrawerOpen(true); };
 
@@ -91,11 +101,11 @@ export default function LeadQueue() {
   };
 
   const toggleAll = () => {
-    if (selectedIds.size === leads.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(leads.map(l => l.id)));
+    if (selectedIds.size === filteredLeads.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredLeads.map(l => l.id)));
   };
 
-  const allSelected = leads.length > 0 && selectedIds.size === leads.length;
+  const allSelected = filteredLeads.length > 0 && selectedIds.size === filteredLeads.length;
 
   const handleMarkUploaded = () => {
     const claimedIds = leads
@@ -128,7 +138,7 @@ export default function LeadQueue() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Lead Queue</h1>
             <p className="text-sm text-muted-foreground">
-              Today's ranked leads — {leads.length} companies · Claim → Export → Upload → Campaign
+              Today's ranked leads — {filteredLeads.length} of {leads.length} companies · Claim → Export → Upload → Campaign
             </p>
           </div>
           <div className="flex gap-2">
@@ -148,6 +158,18 @@ export default function LeadQueue() {
 
         <StarsLegend />
 
+        {/* D365 Filters */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Switch checked={hideD365Owned} onCheckedChange={setHideD365Owned} id="hide-d365" />
+            <label htmlFor="hide-d365" className="text-xs text-muted-foreground cursor-pointer">Hide D365-owned</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={showUnclaimedOnly} onCheckedChange={setShowUnclaimedOnly} id="unclaimed-only" />
+            <label htmlFor="unclaimed-only" className="text-xs text-muted-foreground cursor-pointer">Unclaimed in D365 only</label>
+          </div>
+        </div>
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -163,18 +185,19 @@ export default function LeadQueue() {
                   <TableHead className="w-20">Emp.</TableHead>
                   <TableHead className="w-16">Region</TableHead>
                   <TableHead>Signals</TableHead>
-                  <TableHead className="w-32">Suggested Persona</TableHead>
+                   <TableHead className="w-32">Suggested Persona</TableHead>
+                  <TableHead className="w-32">D365</TableHead>
                   <TableHead className="w-36">Status</TableHead>
                   <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
-                ) : leads.length === 0 ? (
-                  <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground">No leads yet. Click "Run Scoring" to generate today's queue.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
+                ) : filteredLeads.length === 0 ? (
+                  <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">{leads.length === 0 ? 'No leads yet. Click "Run Scoring" to generate today\'s queue.' : 'No leads match current filters.'}</TableCell></TableRow>
                 ) : (
-                  leads.map((lead) => {
+                  filteredLeads.map((lead) => {
                     const claimStatus = (lead as any).claim_status || 'new';
                     return (
                       <TableRow
@@ -198,8 +221,12 @@ export default function LeadQueue() {
                             industryKey={lead.industry_key}
                             signals={lead.reason}
                             companyName={lead.account.name}
+                            zywaveId={lead.account.zywave_id}
                             variant="compact"
                           />
+                        </TableCell>
+                        <TableCell>
+                          <D365OwnerBadge ownerName={lead.account.d365_owner_name} />
                         </TableCell>
                         <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
