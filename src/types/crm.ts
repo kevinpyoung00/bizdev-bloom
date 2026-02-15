@@ -60,6 +60,7 @@ export interface CarrierChangeSignal {
   former_carrier?: string;
   new_carrier?: string;
   days_ago?: number | null;
+  source?: 'zywave' | 'news' | 'career_page' | 'manual' | 'other';
 }
 
 export interface TalentRiskSignal {
