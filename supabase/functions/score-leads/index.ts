@@ -448,11 +448,15 @@ Deno.serve(async (req) => {
       if (scanText && carrierNames.length > 0 && carrierPhrases.length > 0) {
         const match = proximityMatch(scanText, carrierNames, carrierPhrases);
         if (match) {
+          // Try to find a second carrier near the phrase as the former carrier
+          const otherCarriers = carrierNames.filter((c) => c.toLowerCase() !== match.carrier.toLowerCase());
+          const formerMatch = otherCarriers.length > 0 ? proximityMatch(scanText, otherCarriers, carrierPhrases) : null;
+          const daysAgo: number | null = null; // not derivable from text
           s.reasons.lead_signals.carrier_change = {
-            recent: true,
-            former_carrier: null,
+            recent: daysAgo != null ? daysAgo <= 120 : true,
+            former_carrier: formerMatch ? formerMatch.carrier : null,
             new_carrier: match.carrier,
-            days_ago: 0,
+            days_ago: daysAgo,
             source: "news",
           };
         }
