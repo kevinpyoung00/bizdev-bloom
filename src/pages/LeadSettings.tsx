@@ -6,6 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useIndustrySettings } from '@/hooks/useLeadActions';
 import { Loader2 } from 'lucide-react';
+import KeywordListEditor from '@/components/lead-engine/KeywordListEditor';
 
 export default function LeadSettings() {
   const { data: industries = [], isLoading } = useIndustrySettings();
@@ -121,6 +122,16 @@ export default function LeadSettings() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Signals & Scanners */}
+        <Separator />
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Signals & Scanners</h2>
+          <p className="text-sm text-muted-foreground mb-4">Keyword lists used by the daily discovery pipeline to detect carrier changes and HR/benefits news.</p>
+        </div>
+        <KeywordListEditor category="carrier_names" />
+        <KeywordListEditor category="carrier_change_phrases" />
+        <KeywordListEditor category="benefits_hr_keywords" />
       </div>
     </Layout>
   );

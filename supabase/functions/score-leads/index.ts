@@ -356,6 +356,35 @@ function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
 
 // ─── Main handler ───
 
+// ─── Keyword scanner helpers ───
+
+function proximityMatch(text: string, carriers: string[], phrases: string[], window = 100): { carrier: string; phrase: string } | null {
+  const lower = text.toLowerCase();
+  for (const carrier of carriers) {
+    const cLower = carrier.toLowerCase();
+    let cIdx = lower.indexOf(cLower);
+    while (cIdx !== -1) {
+      for (const phrase of phrases) {
+        const pLower = phrase.toLowerCase();
+        let pIdx = lower.indexOf(pLower);
+        while (pIdx !== -1) {
+          if (Math.abs(pIdx - cIdx) <= window) return { carrier, phrase };
+          pIdx = lower.indexOf(pLower, pIdx + 1);
+        }
+      }
+      cIdx = lower.indexOf(cLower, cIdx + 1);
+    }
+  }
+  return null;
+}
+
+function scanForHrKeywords(text: string, keywords: string[]): string[] {
+  const lower = text.toLowerCase();
+  return keywords.filter((kw) => lower.includes(kw.toLowerCase()));
+}
+
+// ─── Main handler ───
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -378,6 +407,16 @@ Deno.serve(async (req) => {
       await supabase.from("lead_queue").delete().eq("run_date", runDate);
     }
 
+    // ─── Load configurable keywords from settings ───
+    const { data: kwRows } = await supabase.from("signal_keywords").select("category, keywords");
+    const kwMap: Record<string, string[]> = {};
+    for (const row of kwRows || []) {
+      kwMap[(row as any).category] = (row as any).keywords as string[] ?? [];
+    }
+    const carrierNames = kwMap["carrier_names"] ?? [];
+    const carrierPhrases = kwMap["carrier_change_phrases"] ?? [];
+    const hrKeywords = kwMap["benefits_hr_keywords"] ?? [];
+
     const { data: accounts, error: accountsErr } = await supabase.from("accounts").select("*");
     if (accountsErr) throw accountsErr;
     if (!accounts || accounts.length === 0) {
@@ -389,7 +428,50 @@ Deno.serve(async (req) => {
     const contactsByAccount = new Map<string, any[]>();
     for (const c of allContacts || []) { if (!c.account_id) continue; if (!contactsByAccount.has(c.account_id)) contactsByAccount.set(c.account_id, []); contactsByAccount.get(c.account_id)!.push(c); }
 
-    const scored = accounts.map((a) => scoreAccount(a, contactsByAccount.get(a.id) || []));
+    const scored = accounts.map((a) => {
+      const s = scoreAccount(a, contactsByAccount.get(a.id) || []);
+
+      // ─── Keyword scanning on triggers.news / notes ───
+      const newsText = (() => {
+        const t = a.triggers as any;
+        if (!t) return "";
+        const news = t.news ?? t.press ?? t.media;
+        if (typeof news === "string") return news;
+        if (Array.isArray(news)) return news.join(" ");
+        if (news?.text) return news.text;
+        if (news?.keywords && Array.isArray(news.keywords)) return news.keywords.join(" ");
+        return "";
+      })();
+      const scanText = `${newsText} ${(a as any).notes || ""}`;
+
+      // Carrier change detection
+      if (scanText && carrierNames.length > 0 && carrierPhrases.length > 0) {
+        const match = proximityMatch(scanText, carrierNames, carrierPhrases);
+        if (match) {
+          s.reasons.lead_signals.carrier_change = {
+            carrier: match.carrier,
+            source: "news",
+            days_ago: null,
+          };
+        }
+      }
+
+      // HR/Benefits keyword detection
+      if (scanText && hrKeywords.length > 0) {
+        const found = scanForHrKeywords(scanText, hrKeywords);
+        if (found.length > 0) {
+          if (!s.reasons.lead_signals.news) {
+            s.reasons.lead_signals.news = { keywords: found, last_mention_days_ago: null };
+          } else {
+            const existing: string[] = s.reasons.lead_signals.news.keywords || [];
+            const merged = [...new Set([...existing, ...found])];
+            s.reasons.lead_signals.news.keywords = merged;
+          }
+        }
+      }
+
+      return s;
+    });
 
     if (!dryRun) {
       for (const s of scored) {
@@ -405,7 +487,7 @@ Deno.serve(async (req) => {
     if (!dryRun && top50.length > 0) {
       const rows = top50.map((a, i) => ({
         account_id: a.id, run_date: runDate, priority_rank: i + 1,
-        score: a.signal_stars, // Store signal_stars in score column for backward compat
+        score: a.signal_stars,
         reason: a.reasons, status: "pending",
       }));
       const { error: insertErr } = await supabase.from("lead_queue").insert(rows);
