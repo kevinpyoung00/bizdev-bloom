@@ -246,6 +246,7 @@ export default function ContactDetail() {
               employeeCount={contact.employeeCount ? parseInt(contact.employeeCount, 10) : null}
               industryKey={matchIndustryKey(contact.industry)}
               signals={leadSignals ? { lead_signals: leadSignals } : undefined}
+              companyName={contact.company}
               variant="full"
             />
           </div>

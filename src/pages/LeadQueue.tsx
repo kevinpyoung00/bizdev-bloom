@@ -197,6 +197,7 @@ export default function LeadQueue() {
                             employeeCount={lead.account.employee_count}
                             industryKey={lead.industry_key}
                             signals={lead.reason}
+                            companyName={lead.account.name}
                             variant="compact"
                           />
                         </TableCell>
