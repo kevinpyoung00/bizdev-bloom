@@ -375,9 +375,7 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
                 {contactEmail && !isUnsubscribed && (
                   <>
                     <a
-                      href={`ms-outlook://compose?to=${encodeURIComponent(contactEmail)}&subject=${encodeURIComponent(getEmailSubject())}&body=${encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'))}`}
-                      target="_blank"
-                      rel="noopener"
+                      href={`mailto:${contactEmail}?subject=${encodeURIComponent(getEmailSubject())}&body=${encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'))}`}
                       className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
                       onClick={() => autoCheckChannel()}
                     >
