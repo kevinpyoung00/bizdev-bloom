@@ -151,12 +151,6 @@ export default function ContactDetail() {
 
         {/* 12-Week Workflow */}
         <div>
-          <div
-            id="drip-component-path"
-            style={{ position: 'sticky', top: 0, zIndex: 9999, background: '#ffefc1', border: '1px solid #c99a00', color: '#5d4a00', fontSize: '12px', padding: '6px' }}
-          >
-            DRIP RENDER: ContactDetail — src/pages/ContactDetail.tsx
-          </div>
           <h2 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
             <Calendar size={18} /> 12-Week Drip Workflow
           </h2>
