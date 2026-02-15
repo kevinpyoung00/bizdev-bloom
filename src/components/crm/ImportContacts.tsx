@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
 import { useCrm } from '@/store/CrmContext';
-import { RolePersona, ContactSource, ContactStatus } from '@/types/crm';
+import { RolePersona, ContactSource, ContactStatus, createEmptySignals } from '@/types/crm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -229,6 +229,7 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
         status,
         startDate: today,
         notes: noteParts.join('\n'),
+        signals: createEmptySignals(),
       });
       count++;
     }

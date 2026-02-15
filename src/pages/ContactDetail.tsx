@@ -6,8 +6,8 @@ import WeekPanel from '@/components/crm/WeekPanel';
 import type { WeekPanelLeadData } from '@/components/crm/WeekPanel';
 import ContactForm from '@/components/crm/ContactForm';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus } from 'lucide-react';
-import { getContactProgress } from '@/types/crm';
+import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus, TrendingUp, UserCheck, Briefcase, DollarSign, Tag } from 'lucide-react';
+import { getContactProgress, getHiringIntensity, isHrChangeRecent } from '@/types/crm';
 import { useState, useMemo } from 'react';
 import { detectPersona } from '@/lib/persona';
 
@@ -40,12 +40,12 @@ export default function ContactDetail() {
         renewal_month: contact.renewalMonth,
       },
       persona: detectPersona(contact.title),
-      signals: {
-        funding: {},
-        hiring: {},
-        hr_change: {},
-        csuite: {},
-      },
+      signals: contact.signals ? {
+        funding: contact.signals.funding_stage !== 'None' ? { stage: contact.signals.funding_stage, days_ago: contact.signals.funding_days_ago } : {},
+        hiring: contact.signals.jobs_60d ? { jobs_60d: contact.signals.jobs_60d, intensity: getHiringIntensity(contact.signals.jobs_60d) } : {},
+        hr_change: contact.signals.hr_change_title ? { title: contact.signals.hr_change_title, days_ago: contact.signals.hr_change_days_ago } : {},
+        csuite: contact.signals.csuite_role ? { role: contact.signals.csuite_role, days_ago: contact.signals.csuite_days_ago } : {},
+      } : { funding: {}, hiring: {}, hr_change: {}, csuite: {} },
       reach: {
         hasEmail: !!contact.email,
         hasPhone: !!contact.phone,
@@ -156,6 +156,59 @@ export default function ContactDetail() {
             )}
           </div>
         </div>
+
+        {/* Company Signals */}
+        {contact.signals && (
+          <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+            <h3 className="font-semibold text-sm text-card-foreground flex items-center gap-1.5"><TrendingUp size={14} /> Company Signals</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              {contact.signals.funding_stage && contact.signals.funding_stage !== 'None' && (
+                <div className="bg-muted/50 rounded-md p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase flex items-center gap-1"><DollarSign size={10} /> Funding</p>
+                  <p className="font-medium text-foreground">{contact.signals.funding_stage}</p>
+                  {contact.signals.funding_days_ago != null && <p className="text-xs text-muted-foreground">{contact.signals.funding_days_ago}d ago</p>}
+                </div>
+              )}
+              {contact.signals.hr_change_title && (
+                <div className="bg-muted/50 rounded-md p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase flex items-center gap-1"><UserCheck size={10} /> HR Change</p>
+                  <p className="font-medium text-foreground">{contact.signals.hr_change_title}</p>
+                  {contact.signals.hr_change_days_ago != null && (
+                    <p className={`text-xs ${isHrChangeRecent(contact.signals.hr_change_days_ago) ? 'text-success' : 'text-muted-foreground'}`}>
+                      {contact.signals.hr_change_days_ago}d ago {isHrChangeRecent(contact.signals.hr_change_days_ago) && '(Recent)'}
+                    </p>
+                  )}
+                </div>
+              )}
+              {contact.signals.csuite_role && (
+                <div className="bg-muted/50 rounded-md p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase flex items-center gap-1"><Briefcase size={10} /> C-Suite Change</p>
+                  <p className="font-medium text-foreground">{contact.signals.csuite_role}</p>
+                  {contact.signals.csuite_days_ago != null && <p className="text-xs text-muted-foreground">{contact.signals.csuite_days_ago}d ago</p>}
+                </div>
+              )}
+              {contact.signals.jobs_60d != null && contact.signals.jobs_60d > 0 && (
+                <div className="bg-muted/50 rounded-md p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase flex items-center gap-1"><TrendingUp size={10} /> Hiring</p>
+                  <p className="font-medium text-foreground">{contact.signals.jobs_60d} jobs</p>
+                  {getHiringIntensity(contact.signals.jobs_60d) && <p className="text-xs text-muted-foreground">{getHiringIntensity(contact.signals.jobs_60d)} intensity</p>}
+                </div>
+              )}
+            </div>
+            {contact.signals.triggers && contact.signals.triggers.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <Tag size={12} className="text-muted-foreground" />
+                {contact.signals.triggers.map(t => (
+                  <span key={t} className="text-[10px] bg-accent text-accent-foreground px-2 py-0.5 rounded-full">{t}</span>
+                ))}
+              </div>
+            )}
+            {!contact.signals.funding_stage || contact.signals.funding_stage === 'None' ? null : null}
+            {(!contact.signals.funding_stage || contact.signals.funding_stage === 'None') && !contact.signals.hr_change_title && !contact.signals.csuite_role && (!contact.signals.jobs_60d || contact.signals.jobs_60d === 0) && (!contact.signals.triggers || contact.signals.triggers.length === 0) && (
+              <p className="text-xs text-muted-foreground italic">No signals entered. Edit contact to add company signals.</p>
+            )}
+          </div>
+        )}
 
         {/* 12-Week Workflow */}
         <div>

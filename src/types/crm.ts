@@ -39,6 +39,45 @@ export interface TouchLog {
   notes: string;
 }
 
+export type FundingStage = 'None' | 'Seed' | 'Series A' | 'Series B' | 'Series C+' | 'Private Equity' | 'Venture Debt';
+export type CSuiteRole = 'CEO' | 'CFO' | 'COO' | 'CHRO' | 'Other';
+export type TriggerTag = 'New location' | 'M&A' | 'Restructure' | 'Layoffs' | 'New product launch' | 'Approaching headcount milestone';
+
+export interface ContactSignals {
+  funding_stage: FundingStage;
+  funding_days_ago: number | null;
+  hr_change_title: string;
+  hr_change_days_ago: number | null;
+  csuite_role: CSuiteRole | '';
+  csuite_days_ago: number | null;
+  jobs_60d: number | null;
+  triggers: TriggerTag[];
+}
+
+export function getHiringIntensity(jobs60d: number | null): string {
+  if (!jobs60d || jobs60d < 3) return '';
+  if (jobs60d >= 10) return 'Large';
+  if (jobs60d >= 6) return 'Medium';
+  return 'Small';
+}
+
+export function isHrChangeRecent(daysAgo: number | null): boolean {
+  return daysAgo != null && daysAgo <= 60;
+}
+
+export function createEmptySignals(): ContactSignals {
+  return {
+    funding_stage: 'None',
+    funding_days_ago: null,
+    hr_change_title: '',
+    hr_change_days_ago: null,
+    csuite_role: '',
+    csuite_days_ago: null,
+    jobs_60d: null,
+    triggers: [],
+  };
+}
+
 export interface Contact {
   id: string;
   firstName: string;
@@ -60,6 +99,7 @@ export interface Contact {
   lastTouchDate: string;
   nextTouchDate: string;
   notes: string;
+  signals: ContactSignals;
   weekProgress: WeekProgress[];
   touchLogs: TouchLog[];
 }
