@@ -102,22 +102,22 @@ export default function DripWeekPanel({
           size="sm"
           variant="outline"
           className="gap-1 text-xs"
+          onClick={() => handleGenerate('linkedin')}
+          disabled={locked || (isGenerating && generatingChannel === 'linkedin')}
+        >
+          {isGenerating && generatingChannel === 'linkedin' ? <Loader2 size={12} className="animate-spin" /> : <Linkedin size={12} />}
+          {isWeek1 ? 'Connect / Generate LinkedIn Message' : 'LinkedIn'}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 text-xs"
           onClick={() => handleGenerate('email')}
           disabled={emailDisabled || (isGenerating && generatingChannel === 'email')}
           title={isUnsubscribed ? 'Email suppressed — contact is unsubscribed' : undefined}
         >
           {isGenerating && generatingChannel === 'email' ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
           Email
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1 text-xs"
-          onClick={() => handleGenerate('linkedin')}
-          disabled={locked || (isGenerating && generatingChannel === 'linkedin')}
-        >
-          {isGenerating && generatingChannel === 'linkedin' ? <Loader2 size={12} className="animate-spin" /> : <Linkedin size={12} />}
-          {isWeek1 ? 'Connect Note' : 'LinkedIn'}
         </Button>
         <Button
           size="sm"
