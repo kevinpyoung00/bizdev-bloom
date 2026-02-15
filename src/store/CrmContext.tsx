@@ -67,9 +67,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       const today = new Date().toISOString().split('T')[0];
       const wp = c.weekProgress.map(w => {
         if (w.week !== week) return w;
-        if (channel === 'LinkedIn') return { ...w, liDone: true };
-        if (channel === 'Email') return { ...w, emailDone: true };
-        return { ...w, phoneDone: true };
+        if (channel === 'LinkedIn') return { ...w, liDone: !w.liDone };
+        if (channel === 'Email') return { ...w, emailDone: !w.emailDone };
+        return { ...w, phoneDone: !w.phoneDone };
       });
 
       const weekData = wp.find(w => w.week === week)!;
