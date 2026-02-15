@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Contact, Campaign, ContactStatus, TouchLog, generateId, createEmptyWeekProgress, TouchOutcome, isCallWeek } from '@/types/crm';
+import { Contact, Campaign, ContactStatus, TouchLog, generateId, createEmptyWeekProgress, createEmptySignals, TouchOutcome, isCallWeek } from '@/types/crm';
 import { defaultCampaigns } from '@/data/defaultCampaigns';
 
 interface CrmContextType {
@@ -47,6 +47,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       currentWeek: 1,
       lastTouchDate: '',
       nextTouchDate: contact.startDate || today,
+      signals: contact.signals || createEmptySignals(),
       weekProgress: createEmptyWeekProgress(),
       touchLogs: [],
     };
