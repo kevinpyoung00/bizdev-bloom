@@ -400,9 +400,9 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
                 </Button>
                 {contactLinkedIn ? (
                   <a
-                    href={contactLinkedIn}
+                    href={contactLinkedIn.startsWith('http') ? contactLinkedIn : `https://${contactLinkedIn}`}
                     target="_blank"
-                    rel="noopener"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium"
                     onClick={() => autoCheckChannel()}
                   >
