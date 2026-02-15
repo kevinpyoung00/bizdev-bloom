@@ -58,6 +58,7 @@ export type Database = {
       accounts: {
         Row: {
           created_at: string
+          d365_owner_name: string | null
           disposition: string
           domain: string | null
           employee_count: number | null
@@ -79,9 +80,11 @@ export type Database = {
           triggers: Json | null
           updated_at: string
           website: string | null
+          zywave_id: string | null
         }
         Insert: {
           created_at?: string
+          d365_owner_name?: string | null
           disposition?: string
           domain?: string | null
           employee_count?: number | null
@@ -103,9 +106,11 @@ export type Database = {
           triggers?: Json | null
           updated_at?: string
           website?: string | null
+          zywave_id?: string | null
         }
         Update: {
           created_at?: string
+          d365_owner_name?: string | null
           disposition?: string
           domain?: string | null
           employee_count?: number | null
@@ -127,6 +132,7 @@ export type Database = {
           triggers?: Json | null
           updated_at?: string
           website?: string | null
+          zywave_id?: string | null
         }
         Relationships: []
       }

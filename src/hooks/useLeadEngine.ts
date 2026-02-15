@@ -27,6 +27,8 @@ export interface LeadWithAccount {
     notes: string | null;
     website: string | null;
     disposition: string;
+    zywave_id: string | null;
+    d365_owner_name: string | null;
   };
 }
 
