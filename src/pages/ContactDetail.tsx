@@ -122,7 +122,7 @@ export default function ContactDetail() {
               )}
             </div>
             {contact.linkedInUrl && (
-              <a href={contact.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 text-xs flex items-center gap-1">
+              <a href={contact.linkedInUrl?.startsWith('http') ? contact.linkedInUrl : `https://${contact.linkedInUrl}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 text-xs flex items-center gap-1">
                 <Linkedin size={12} /> LinkedIn Profile <ExternalLink size={10} />
               </a>
             )}
