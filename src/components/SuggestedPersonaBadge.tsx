@@ -12,26 +12,45 @@ interface Props {
   variant?: 'compact' | 'full';
 }
 
-function QuickSearchLinks({ rec, companyName }: { rec: PersonaRecommendation; companyName: string }) {
+/** Use Google Search to bypass iframe/X-Frame-Options blocking */
+function buildSearchLinks(rec: PersonaRecommendation, companyName: string) {
   const titleKw = buildTitleKeywords(rec);
-  const linkedInUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(titleKw)}&company=${encodeURIComponent(companyName)}`;
-  const salesNavUrl = `https://www.linkedin.com/sales/search/people?query=(company:${encodeURIComponent(companyName)}+title:(${encodeURIComponent(titleKw)}))`;
-  const zoomInfoUrl = `https://www.zoominfo.com/search?search_query=${encodeURIComponent(companyName)}`;
+
+  // LinkedIn People via Google
+  const linkedInHref = `https://www.google.com/search?q=${encodeURIComponent(
+    `site:linkedin.com/in "${companyName}" ${rec.recommendedTitles.slice(0, 3).join(' OR ')}`
+  )}`;
+
+  // Sales Navigator via Google (direct SalesNav URLs require auth + don't accept query params reliably)
+  const salesNavHref = `https://www.google.com/search?q=${encodeURIComponent(
+    `site:linkedin.com/sales OR site:linkedin.com/in "${companyName}" ${rec.recommendedTitles.slice(0, 2).join(' OR ')}`
+  )}`;
+
+  // ZoomInfo company via Google (ZoomInfo requires login, so Google gets us to the right page)
+  const zoomInfoHref = `https://www.google.com/search?q=${encodeURIComponent(
+    `site:zoominfo.com "${companyName}"`
+  )}`;
+
+  return { linkedInHref, salesNavHref, zoomInfoHref };
+}
+
+function QuickSearchLinks({ rec, companyName }: { rec: PersonaRecommendation; companyName: string }) {
+  const { linkedInHref, salesNavHref, zoomInfoHref } = buildSearchLinks(rec, companyName);
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className="text-[10px] text-muted-foreground font-medium">Quick Search:</span>
-      <a href={linkedInUrl} target="_blank" rel="noopener noreferrer">
+      <a href={linkedInHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
           <Linkedin size={10} /> LinkedIn
         </Button>
       </a>
-      <a href={salesNavUrl} target="_blank" rel="noopener noreferrer">
+      <a href={salesNavHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
           <Search size={10} /> Sales Nav
         </Button>
       </a>
-      <a href={zoomInfoUrl} target="_blank" rel="noopener noreferrer">
+      <a href={zoomInfoHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
           <ExternalLink size={10} /> ZoomInfo
         </Button>
@@ -45,13 +64,18 @@ export default function SuggestedPersonaBadge({ employeeCount, industryKey, sign
 
   if (variant === 'compact') {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px]" title="Suggested Persona To Look Up on LinkedIn">
-        <Target size={10} className="text-primary shrink-0" />
-        <span className="text-foreground font-medium truncate max-w-[100px]">{rec.primary}</span>
-        {rec.alternates.length > 0 && (
-          <span className="text-muted-foreground">+{rec.alternates.length}</span>
-        )}
-      </span>
+      <div className="space-y-0.5" title="Suggested Persona To Look Up on LinkedIn">
+        <span className="inline-flex items-center gap-1 text-[10px]">
+          <Target size={10} className="text-primary shrink-0" />
+          <span className="text-foreground font-medium truncate max-w-[120px]">{rec.primary}</span>
+          {rec.alternates.length > 0 && (
+            <span className="text-muted-foreground">+{rec.alternates.length}</span>
+          )}
+        </span>
+        <p className="text-[9px] text-muted-foreground truncate max-w-[160px]">
+          {rec.recommendedTitles.slice(0, 3).join(', ')}
+        </p>
+      </div>
     );
   }
 
