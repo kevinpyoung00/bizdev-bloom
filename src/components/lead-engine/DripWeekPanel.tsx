@@ -72,11 +72,9 @@ export default function DripWeekPanel({
             <h4 className="font-semibold text-sm text-foreground">Week {week}: {theme.theme}</h4>
             <p className="text-xs text-muted-foreground">{theme.description}</p>
           </div>
-          {isWeek1 && (
-            <Button size="sm" variant="secondary" className="text-xs ml-2" onClick={() => toast('Drip panel is editable.')}>
-              ⚙️ Test Button
-            </Button>
-          )}
+          <Button size="sm" variant="secondary" className="text-xs ml-2" onClick={() => toast(`DripWeekPanel is rendering (week=${week}).`)}>
+            ⚙️ Test Button (Every Week)
+          </Button>
         </div>
         <div className="flex gap-1">
           {locked && (
