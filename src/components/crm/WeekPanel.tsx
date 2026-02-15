@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, PhoneCall } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -225,9 +226,16 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
     setModalOpen(true);
   };
 
+  const autoCheckChannel = () => {
+    if (modalChannel === 'email' && !emailDone) markTouchDone(contactId, week, 'Email');
+    if (modalChannel === 'linkedin' && !liDone) markTouchDone(contactId, week, 'LinkedIn');
+    if (modalChannel === 'phone' && !phoneDone) markTouchDone(contactId, week, 'Phone');
+  };
+
   const handleCopy = (text?: string) => {
     navigator.clipboard.writeText(text ?? modalContent);
     setCopied(true);
+    autoCheckChannel();
     toast.success('Copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
   };
@@ -257,12 +265,14 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
     const subject = encodeURIComponent(getEmailSubject());
     const body = encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'));
     window.open(`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(contactEmail)}&subject=${subject}&body=${body}`, '_blank');
+    autoCheckChannel();
   };
 
   const openMailto = () => {
     const subject = encodeURIComponent(getEmailSubject());
     const body = encodeURIComponent(getEmailBody().replace(/\n/g, '\r\n'));
     window.location.href = `mailto:${contactEmail}?subject=${subject}&body=${body}`;
+    autoCheckChannel();
   };
 
   const channelLabel = modalChannel === 'email' ? 'Email'
@@ -276,15 +286,7 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
       isPast ? 'border-border bg-card opacity-60' :
       'border-border bg-card'
     }`}>
-      {/* Debug banner */}
-      <div
-        id="weekpanel-proof"
-        style={{ position: 'sticky', top: 0, zIndex: 9999, background: '#fff3cd', border: '1px solid #b08900', color: '#5d4a00', padding: '4px 6px', fontSize: '12px' }}
-      >
-        WeekPanel.tsx active — week={week}
-      </div>
-
-      <div className="flex items-center justify-between mb-3 mt-2">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
             isComplete ? 'bg-success text-success-foreground' :
@@ -328,23 +330,26 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
         {asset && <div className="text-xs text-muted-foreground">Asset: <span className="text-foreground">{asset}</span></div>}
       </div>
 
-      {/* Three generation buttons — all weeks */}
-      <div className="flex gap-2 flex-wrap mb-3">
-        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openGenModal('email')}>
-          <Mail size={12} /> Generate Email
-        </Button>
-        <Button
-          size="sm"
-          variant={!contactEmail ? 'default' : 'outline'}
-          className={`gap-1 text-xs ${!contactEmail ? 'ring-2 ring-primary/30' : ''}`}
-          onClick={() => openGenModal('linkedin')}
-        >
-          <Linkedin size={12} /> Generate LinkedIn Message
-          {!contactEmail && <span className="text-[9px] ml-1 opacity-70">★ Recommended</span>}
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => openGenModal('phone')}>
-          <Phone size={12} /> Generate Phone Touch
-        </Button>
+      {/* Three generation buttons + done checkboxes */}
+      <div className="space-y-2 mb-3">
+        <div className="flex items-center gap-2">
+          <Checkbox checked={emailDone} onCheckedChange={() => markTouchDone(contactId, week, 'Email')} />
+          <Button size="sm" variant="outline" className="gap-1 text-xs flex-1" onClick={() => openGenModal('email')}>
+            <Mail size={12} /> Generate Email
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox checked={liDone} onCheckedChange={() => markTouchDone(contactId, week, 'LinkedIn')} />
+          <Button size="sm" variant="outline" className="gap-1 text-xs flex-1" onClick={() => openGenModal('linkedin')}>
+            <Linkedin size={12} /> Generate LinkedIn Message
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox checked={phoneDone} onCheckedChange={() => markTouchDone(contactId, week, 'Phone')} />
+          <Button size="sm" variant="outline" className="gap-1 text-xs flex-1" onClick={() => openGenModal('phone')}>
+            <Phone size={12} /> Generate Phone Touch
+          </Button>
+        </div>
       </div>
 
       {/* Generation modal */}
