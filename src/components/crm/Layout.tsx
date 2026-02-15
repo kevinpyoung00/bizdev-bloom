@@ -15,7 +15,7 @@ const navItems = [
   { to: '/campaigns', icon: Megaphone, label: 'Campaigns' },
   { to: '/leads', icon: Target, label: 'Lead Engine', divider: true },
   { to: '/lead-queue', icon: Target, label: 'Lead Queue' },
-  { to: '/coi-queue', icon: Handshake, label: 'COI Queue' },
+  { to: '/coi-queue', icon: Handshake, label: 'COI Prospect Queue' },
   { to: '/enrichment', icon: Database, label: 'Enrichment' },
   { to: '/lead-settings', icon: Settings, label: 'Settings' },
 ] as const;
