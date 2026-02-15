@@ -1,6 +1,36 @@
 // Token system with fallback syntax: {{token | "fallback"}}
+// Supports dot-path resolution for nested objects
 
 export interface TokenContext {
+  contact?: {
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    email?: string;
+    phone?: string;
+    linkedin_url?: string;
+    title?: string;
+  };
+  company?: {
+    name?: string;
+    domain?: string;
+    industry_key?: string;
+    industry_label?: string;
+    hq_city?: string;
+    hq_state?: string;
+    employee_count?: string | number | null;
+    renewal_month?: string;
+    current_carrier?: string;
+  };
+  persona?: string | { name?: string; track?: string };
+  signals?: {
+    funding?: { stage?: string; days_ago?: number };
+    hiring?: { jobs_60d?: number; intensity?: string };
+    hr_change?: { title?: string; days_ago?: number };
+    csuite?: { role?: string; days_ago?: number };
+  };
+  reach?: { hasEmail?: boolean; hasPhone?: boolean; hasLinkedIn?: boolean };
+  // Legacy flat tokens for backward compat
   company_name?: string;
   industry_label?: string;
   hq_city?: string;
@@ -8,13 +38,6 @@ export interface TokenContext {
   employee_count?: number | null;
   renewal_month?: string;
   first_name?: string;
-  signals?: {
-    funding?: { stage?: string; days_ago?: number };
-    hiring?: { jobs_60d?: number; intensity?: string };
-    hr_change?: { title?: string; days_ago?: number };
-    csuite?: { role?: string; days_ago?: number };
-  };
-  persona?: { name?: string; track?: string };
 }
 
 export function resolveTokens(template: string, ctx: TokenContext): string {

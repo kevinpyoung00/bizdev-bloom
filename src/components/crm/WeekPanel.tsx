@@ -9,6 +9,7 @@ import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, P
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { getWeekTheme } from '@/lib/weekThemes';
+import { pickStrongestSignal, hasRecentSignals } from '@/lib/signalPicker';
 
 const outcomes: (TouchOutcome | '')[] = ['', 'No Response', 'Positive Reply', 'Negative Reply', 'Meeting Booked', 'Bad Fit', 'Bounced'];
 
@@ -58,30 +59,33 @@ interface Props {
 
 /* ── Draft generators ── */
 
-function getWeek1Draft(channel: 'email' | 'linkedin' | 'phone'): string {
+function getWeek1Draft(channel: 'email' | 'linkedin' | 'phone', leadData?: WeekPanelLeadData): string {
+  const sig = pickStrongestSignal(leadData?.signals);
+  const sigRef = `{{signals.funding.stage | "${sig.label}"}}`;
+
   if (channel === 'email') {
     return `Hi {{contact.first_name | "there"}},
 
-I came across {{company.name | "your company"}} while reviewing growth-stage firms in {{company.hq_city | "your area"}} — {{signals.funding.stage | "your recent momentum"}} caught my attention.
+I came across {{company.name | "your company"}} while reviewing growth-stage firms in {{company.hq_city | "your area"}} — ${sig.type === 'industry_anchor' ? 'your growth trajectory' : sig.label} caught my attention.
 
-For companies in the 50–150 employee range, this is often the inflection point where benefits strategy shifts from reactive to competitive. We work with similar organizations to turn that transition into a talent advantage.
+For companies in the {{company.employee_count | "50–150"}}-employee range, this is often the inflection point where benefits strategy shifts from reactive to competitive. We work with similar {{company.industry_label | "mid-market"}} organizations to turn that transition into a talent advantage.
 
 Would you have 10–15 minutes next week to explore whether there's a fit?
 
 Best,`;
   }
   if (channel === 'linkedin') {
-    return `Hi {{contact.first_name | "there"}} — I noticed {{company.name | "your company"}}'s recent growth and wanted to connect. We help similar firms turn benefits into a talent advantage. Happy to share a brief if helpful.`;
+    return `Hi {{contact.first_name | "there"}} — I noticed {{company.name | "your company"}}'s ${sig.label} and wanted to connect. We help similar {{company.industry_label | "firms"}} turn benefits into a talent advantage. Happy to share a brief if helpful.`;
   }
   return `TALKING POINTS:
-• Reference {{signals.funding.stage | "recent company momentum"}}
-• Mention working with similar 50–150 EE firms in {{company.hq_city | "their area"}}
-• Position benefits strategy as a talent lever
+• Reference {{company.name | "your company"}}'s ${sig.label}
+• Mention working with similar {{company.employee_count | "50–150"}} EE firms in {{company.hq_city | "their area"}}
+• Position benefits strategy as a talent lever (${leadData?.persona || 'ExecGeneral'} framing)
 • Ask about current renewal timeline
 • Offer a 10–15 min intro call
 
 VOICEMAIL (≤20s):
-"Hi {{contact.first_name | "there"}}, this is [name] with OneDigital. I noticed {{company.name | "your company"}}'s recent growth and wanted to share how similar firms are turning benefits into a competitive advantage. I'll drop you a note — would love to connect."`;
+"Hi {{contact.first_name | "there"}}, this is [name] with OneDigital. I noticed {{company.name | "your company"}}'s ${sig.label} and wanted to share how similar firms are turning benefits into a competitive advantage. I'll drop you a note — would love to connect."`;
 }
 
 const WEEK_EMAIL_TEMPLATES: Record<number, string> = {
@@ -199,8 +203,8 @@ function getDripDraft(week: number, channel: 'email' | 'linkedin' | 'phone'): st
   return phoneTemplates[week] || `TALKING POINTS:\n• Reference Week ${week} theme: ${theme.theme}\n• Connect to {{company.name | "your company"}}'s situation\n• Ask an open-ended question\n• Offer a specific next step\n\nVOICEMAIL (≤20s):\n"Hi {{contact.first_name | "there"}}, [name] with OneDigital. Following up on ${theme.theme.toLowerCase()} — would love to connect briefly. I'll send a note as well."`;
 }
 
-function getDraft(week: number, channel: 'email' | 'linkedin' | 'phone'): string {
-  return week === 1 ? getWeek1Draft(channel) : getDripDraft(week, channel);
+function getDraft(week: number, channel: 'email' | 'linkedin' | 'phone', leadData?: WeekPanelLeadData): string {
+  return week === 1 ? getWeek1Draft(channel, leadData) : getDripDraft(week, channel);
 }
 
 /* ── Component ── */
@@ -220,7 +224,7 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
 
   const openGenModal = (channel: 'email' | 'linkedin' | 'phone') => {
     setModalChannel(channel);
-    const raw = getDraft(week, channel);
+    const raw = getDraft(week, channel, leadData);
     const merged = leadData ? renderWithTokens(raw, leadData) : raw;
     setModalContent(merged);
     setCopied(false);
