@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, PhoneCall, StickyNote } from 'lucide-react';
+import { Check, Mail, Linkedin, Phone, Copy, Check as CheckIcon, ExternalLink, PhoneCall, StickyNote, CalendarPlus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { getWeekTheme } from '@/lib/weekThemes';
@@ -464,6 +464,14 @@ export default function WeekPanel({ contactId, week, emailTheme, linkedInTouch, 
           <StickyNote size={12} />
           {notes ? 'View Notes' : 'Add Notes'}
         </Button>
+        {contactEmail && (
+          <a
+            href={`mailto:${contactEmail}?subject=${encodeURIComponent(`Meeting Request — Week ${week}`)}&body=${encodeURIComponent(`Hi ${leadData?.contact?.first_name || 'there'},\n\nI'd like to schedule a brief meeting to discuss how we can support ${leadData?.company?.name || 'your team'}. Would any of these times work?\n\n• [Option 1]\n• [Option 2]\n• [Option 3]\n\nLooking forward to connecting.\n\nBest,`)}`}
+            className="inline-flex items-center gap-1 text-xs px-2 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium h-8"
+          >
+            <CalendarPlus size={12} />
+          </a>
+        )}
       </div>
 
       {/* Notes dialog */}

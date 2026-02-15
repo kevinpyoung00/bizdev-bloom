@@ -6,7 +6,7 @@ import WeekPanel from '@/components/crm/WeekPanel';
 import type { WeekPanelLeadData } from '@/components/crm/WeekPanel';
 import ContactForm from '@/components/crm/ContactForm';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Trophy, XCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus } from 'lucide-react';
 import { getContactProgress } from '@/types/crm';
 import { useState, useMemo } from 'react';
 import { detectPersona } from '@/lib/persona';
@@ -75,8 +75,16 @@ export default function ContactDetail() {
             </div>
             <StatusBadge status={contact.status} />
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 size={14} className="mr-1" /> Edit</Button>
+            {contact.email && (
+              <a
+                href={`mailto:${contact.email}?subject=${encodeURIComponent(`Meeting Request — ${contact.firstName} ${contact.lastName} / OneDigital`)}&body=${encodeURIComponent(`Hi ${contact.firstName},\n\nI'd like to schedule a brief meeting to discuss how we can support ${contact.company}. Would any of these times work?\n\n• [Option 1]\n• [Option 2]\n• [Option 3]\n\nLooking forward to connecting.\n\nBest,`)}`}
+                className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium h-8"
+              >
+                <CalendarPlus size={14} /> Book Meeting via Outlook
+              </a>
+            )}
             {contact.status !== 'Hot' && (
               <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={() => bookMeeting(contact.id)}>
                 <Trophy size={14} className="mr-1" /> Meeting Booked
