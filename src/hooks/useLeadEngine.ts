@@ -29,6 +29,11 @@ export interface LeadWithAccount {
     disposition: string;
     zywave_id: string | null;
     d365_owner_name: string | null;
+    d365_status: string | null;
+    d365_last_activity: string | null;
+    d365_account_id: string | null;
+    needs_review: boolean;
+    canonical_company_name: string | null;
   };
 }
 
