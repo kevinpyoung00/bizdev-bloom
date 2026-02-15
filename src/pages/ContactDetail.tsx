@@ -11,13 +11,14 @@ import { ArrowLeft, Calendar, Mail, Linkedin, Phone, ExternalLink, Edit2, Rotate
 import { Badge } from '@/components/ui/badge';
 import { getContactProgress, getHiringIntensity } from '@/types/crm';
 import SignalChips, { buildChipsFromSignals } from '@/components/crm/SignalChips';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { detectPersona } from '@/lib/persona';
 import { matchIndustryKey } from '@/lib/industry';
 import { buildReasonSelectedLine, contactSignalsToLeadSignals } from '@/lib/signals';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
+import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
 
 function getEmployeeTier(count: string): string {
   const n = parseInt(count, 10);
@@ -92,33 +93,26 @@ export default function ContactDetail() {
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [scrapeUrl, setScrapeUrl] = useState('');
-
+  const { enrichContact, enrichContactSilent } = useCompanyEnrich();
+  const lazyEnrichAttempted = useRef(false);
   const contact = contacts.find(c => c.id === id);
+
+  // Lazy enrich on first open if no scrape data
+  useEffect(() => {
+    if (!contact || lazyEnrichAttempted.current) return;
+    if (contact.companyScrape?.scrapedAt) return;
+    if (!contact.company) return;
+    lazyEnrichAttempted.current = true;
+    toast.info('Auto-enriching company intel...');
+    enrichContactSilent(contact.id, { website: contact.website, company: contact.company });
+  }, [contact, enrichContactSilent]);
 
   const handleScrape = async () => {
     if (!contact) return;
     const url = scrapeUrl.trim() || contact.website;
-    if (!url) {
-      toast.error('Please enter a website URL');
-      return;
-    }
     setScraping(true);
     try {
-      const { data, error } = await supabase.functions.invoke('company-scrape', {
-        body: { website: url },
-      });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Scrape failed');
-      updateContact(contact.id, {
-        companyScrape: {
-          summary: data.summary,
-          key_facts: data.key_facts || [],
-          outreach_angles: data.outreach_angles || [],
-          pain_points: data.pain_points || [],
-          scrapedAt: new Date().toISOString(),
-        },
-        website: url,
-      } as any);
+      await enrichContact(contact.id, { website: url, company: contact.company });
       toast.success('Company intel updated from website');
       setScrapeUrl('');
     } catch (err: any) {
