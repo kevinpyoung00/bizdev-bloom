@@ -130,6 +130,23 @@ export function useUpdateDisposition() {
   });
 }
 
+export function useUpdateAccountField() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ accountId, field, value }: { accountId: string; field: string; value: string | null }) => {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ [field]: value } as any)
+        .eq('id', accountId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+    },
+  });
+}
+
 export function useRunScoring() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
