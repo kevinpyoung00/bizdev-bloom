@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { DollarSign, UserCheck, Briefcase, TrendingUp, Tag, Building2, Newspaper } from 'lucide-react';
+import { DollarSign, UserCheck, Briefcase, TrendingUp, Tag, Building2, Newspaper, Repeat, AlertTriangle } from 'lucide-react';
 import type { ContactSignals } from '@/types/crm';
 import { getHiringIntensity, isHrChangeRecent } from '@/types/crm';
 
@@ -57,6 +57,18 @@ export function buildChipsFromSignals(signals?: ContactSignals | null): SignalCh
     for (const t of signals.triggers) {
       chips.push({ label: t, icon: <Tag size={10} />, variant: 'outline' });
     }
+  }
+
+  if (signals.carrier_change?.recent) {
+    const parts = [signals.carrier_change.former_carrier, signals.carrier_change.new_carrier].filter(Boolean);
+    const label = parts.length > 0 ? `Carrier Δ: ${parts.join(' → ')}` : 'Carrier Change';
+    chips.push({ label, icon: <Repeat size={10} />, variant: 'default' });
+  }
+
+  if (signals.talent_risk?.risk) {
+    const dir = signals.talent_risk.review_change_direction;
+    const label = dir ? `Talent Risk (reviews ${dir})` : 'Talent Risk';
+    chips.push({ label, icon: <AlertTriangle size={10} />, variant: 'destructive' });
   }
 
   return chips;
@@ -134,6 +146,20 @@ export function buildChipsFromTriggers(triggers: any): SignalChip[] {
     for (const t of triggers.triggers) {
       chips.push({ label: t, icon: <Tag size={10} />, variant: 'outline' });
     }
+  }
+
+  // Carrier change
+  if (triggers.carrier_change?.recent) {
+    const parts = [triggers.carrier_change.former_carrier, triggers.carrier_change.new_carrier].filter(Boolean);
+    const label = parts.length > 0 ? `Carrier Δ: ${parts.join(' → ')}` : 'Carrier Change';
+    chips.push({ label, icon: <Repeat size={10} />, variant: 'default' });
+  }
+
+  // Talent risk
+  if (triggers.talent_risk?.risk) {
+    const dir = triggers.talent_risk.review_change_direction;
+    const label = dir ? `Talent Risk (reviews ${dir})` : 'Talent Risk';
+    chips.push({ label, icon: <AlertTriangle size={10} />, variant: 'destructive' });
   }
 
   return chips;

@@ -41,10 +41,12 @@ export default function ContactForm({ open, onOpenChange, editContact }: Props) 
     phone: editContact?.phone || '',
     source: editContact?.source || 'Sales Navigator' as ContactSource,
     renewalMonth: editContact?.renewalMonth || '',
+    currentCarrier: editContact?.currentCarrier || '',
     campaignId: editContact?.campaignId || '',
     status: editContact?.status || 'Unworked' as ContactStatus,
     startDate: editContact?.startDate || today,
     notes: editContact?.notes || '',
+    manualNotesForAI: editContact?.manualNotesForAI || '',
   });
 
   const [signals, setSignals] = useState<ContactSignals>(editContact?.signals || createEmptySignals());
@@ -297,6 +299,68 @@ export default function ContactForm({ open, onOpenChange, editContact }: Props) 
                 </div>
               </div>
             </div>
+
+            {/* Carrier Change */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Carrier Change</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <Checkbox checked={!!signals.carrier_change?.recent} onCheckedChange={(v) => setSignals(prev => ({ ...prev, carrier_change: { ...prev.carrier_change, recent: !!v } }))} />
+                    Recent change
+                  </label>
+                </div>
+                <div>
+                  <Label className="text-xs">Former Carrier</Label>
+                  <Input placeholder="e.g. Cigna" value={signals.carrier_change?.former_carrier || ''} onChange={e => setSignals(prev => ({ ...prev, carrier_change: { ...prev.carrier_change, former_carrier: e.target.value } }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">New Carrier</Label>
+                  <Input placeholder="e.g. Aetna" value={signals.carrier_change?.new_carrier || ''} onChange={e => setSignals(prev => ({ ...prev, carrier_change: { ...prev.carrier_change, new_carrier: e.target.value } }))} />
+                </div>
+              </div>
+            </div>
+
+            {/* Talent Risk */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Talent Risk</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <Checkbox checked={!!signals.talent_risk?.risk} onCheckedChange={(v) => setSignals(prev => ({ ...prev, talent_risk: { ...prev.talent_risk, risk: !!v } }))} />
+                    Risk detected
+                  </label>
+                </div>
+                <div>
+                  <Label className="text-xs">Review Direction</Label>
+                  <Select value={signals.talent_risk?.review_change_direction || '_none'} onValueChange={v => setSignals(prev => ({ ...prev, talent_risk: { ...prev.talent_risk, review_change_direction: v === '_none' ? undefined : v as 'up' | 'down' } }))}>
+                    <SelectTrigger><SelectValue placeholder="Direction" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">None</SelectItem>
+                      <SelectItem value="up">Up</SelectItem>
+                      <SelectItem value="down">Down</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Days Ago</Label>
+                  <Input type="number" min={0} placeholder="e.g. 30" value={signals.talent_risk?.days_ago ?? ''} onChange={e => setSignals(prev => ({ ...prev, talent_risk: { ...prev.talent_risk, days_ago: e.target.value ? Number(e.target.value) : null } }))} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Current Carrier */}
+          <div>
+            <Label>Current Carrier</Label>
+            <Input value={form.currentCarrier} onChange={e => set('currentCarrier', e.target.value)} placeholder="e.g. Blue Cross, UnitedHealthcare" />
+          </div>
+
+          {/* Notes to AI */}
+          <div>
+            <Label>Notes to AI</Label>
+            <Textarea value={form.manualNotesForAI} onChange={e => set('manualNotesForAI', e.target.value)} rows={2} placeholder="e.g. Met at SHRM conference, mentioned PEO frustration, interested in compliance audit" />
+            <p className="text-[10px] text-muted-foreground mt-0.5">Weaved naturally into generated outreach messaging.</p>
           </div>
 
           <div>

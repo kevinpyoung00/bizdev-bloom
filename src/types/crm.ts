@@ -55,6 +55,19 @@ export interface NewsSignal {
   last_mention_days_ago?: number | null;
 }
 
+export interface CarrierChangeSignal {
+  recent?: boolean;
+  former_carrier?: string;
+  new_carrier?: string;
+  days_ago?: number | null;
+}
+
+export interface TalentRiskSignal {
+  risk?: boolean;
+  review_change_direction?: 'up' | 'down';
+  days_ago?: number | null;
+}
+
 export interface ContactSignals {
   funding_stage: FundingStage;
   funding_days_ago: number | null;
@@ -66,6 +79,8 @@ export interface ContactSignals {
   triggers: TriggerTag[];
   milestones?: MilestoneFlags;
   news?: NewsSignal;
+  carrier_change?: CarrierChangeSignal;
+  talent_risk?: TalentRiskSignal;
 }
 
 export function getHiringIntensity(jobs60d: number | null): string {
@@ -91,6 +106,8 @@ export function createEmptySignals(): ContactSignals {
     triggers: [],
     milestones: {},
     news: {},
+    carrier_change: {},
+    talent_risk: {},
   };
 }
 
@@ -108,6 +125,7 @@ export interface Contact {
   phone: string;
   source: ContactSource;
   renewalMonth: string;
+  currentCarrier: string;
   campaignId: string;
   status: ContactStatus;
   startDate: string;
@@ -115,6 +133,7 @@ export interface Contact {
   lastTouchDate: string;
   nextTouchDate: string;
   notes: string;
+  manualNotesForAI: string;
   signals: ContactSignals;
   weekProgress: WeekProgress[];
   touchLogs: TouchLog[];
