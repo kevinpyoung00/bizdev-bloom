@@ -79,6 +79,9 @@ export default function ContactDetail() {
             </div>
             <StatusBadge status={contact.status} />
           </div>
+          <div className="mt-1">
+            <SignalChips chips={buildChipsFromSignals(contact.signals)} />
+          </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 size={14} className="mr-1" /> Edit</Button>
             {contact.email && (

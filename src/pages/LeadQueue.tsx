@@ -189,7 +189,7 @@ export default function LeadQueue() {
                         <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{lead.account.industry || '—'}</TableCell>
                         <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
                         <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
-                        <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.account.triggers)} /></TableCell>
+                        <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.reason?.lead_signals || lead.account.triggers)} /></TableCell>
                         <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
