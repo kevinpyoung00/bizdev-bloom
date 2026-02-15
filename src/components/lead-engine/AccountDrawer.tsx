@@ -10,6 +10,7 @@ import { useGenerateDrip } from '@/hooks/useGenerateDrip';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
 import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play } from 'lucide-react';
+import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import { toast } from 'sonner';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
 import DripWeekPanel from '@/components/lead-engine/DripWeekPanel';
@@ -195,6 +196,17 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               <span className="text-xs text-muted-foreground">Industry: </span>
               <Badge variant="outline" className="text-xs">{industryLabel}</Badge>
             </div>
+          </div>
+
+          {/* Suggested Persona To Look Up on LinkedIn */}
+          <div className="border border-border rounded-lg p-3">
+            <SuggestedPersonaBadge
+              employeeCount={account.employee_count}
+              industryKey={industryKey}
+              signals={rawReason}
+              companyName={account.name}
+              variant="full"
+            />
           </div>
 
           {/* Signal Details */}
