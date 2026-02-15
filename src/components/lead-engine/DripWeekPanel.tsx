@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Mail, Linkedin, Phone, Copy, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getWeekTheme } from '@/lib/weekThemes';
+import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import type { PersonaTrack } from '@/lib/persona';
 
 interface DripWeekPanelProps {
@@ -80,6 +81,13 @@ export default function DripWeekPanel({
           )}
         </div>
       </div>
+
+      {/* Signal Preview Chips — show on Week 1 always, Weeks 2-3 if recent */}
+      {leadData?.signals && (week === 1 || (week <= 3 && leadData.signals)) && (
+        <div className="mb-2">
+          <SignalChips chips={buildChipsFromTriggers(leadData.signals)} />
+        </div>
+      )}
 
       {/* LinkedIn-first suggestion when email missing */}
       {!hasEmail && !isUnsubscribed && (

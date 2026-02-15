@@ -54,6 +54,7 @@ export default function ContactDetail() {
         hasPhone: !!contact.phone,
         hasLinkedIn: !!contact.linkedInUrl,
       },
+      _rawSignals: contact.signals,
     };
   }, [contact]);
 
