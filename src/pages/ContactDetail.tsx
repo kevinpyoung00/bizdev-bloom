@@ -6,20 +6,65 @@ import WeekPanel from '@/components/crm/WeekPanel';
 import type { WeekPanelLeadData } from '@/components/crm/WeekPanel';
 import ContactForm from '@/components/crm/ContactForm';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Calendar, Mail, Linkedin, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ArrowLeft, Calendar, Mail, Linkedin, Phone, ExternalLink, Edit2, RotateCcw, Trophy, XCircle, CalendarPlus, ChevronDown, Building2, Zap } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { getContactProgress, getHiringIntensity } from '@/types/crm';
 import SignalChips, { buildChipsFromSignals } from '@/components/crm/SignalChips';
 import { useState, useMemo } from 'react';
 import { detectPersona } from '@/lib/persona';
 import { matchIndustryKey } from '@/lib/industry';
+import { buildReasonSelectedLine, contactSignalsToLeadSignals } from '@/lib/signals';
+
+function getEmployeeTier(count: string): string {
+  const n = parseInt(count, 10);
+  if (isNaN(n)) return count || '—';
+  if (n < 50) return `<50`;
+  if (n < 75) return '50–74';
+  if (n < 100) return '75–99';
+  if (n < 150) return '100–149';
+  return '150+';
+}
+
+function getPriorityLabel(signals: any): { label: string; className: string } {
+  const s = contactSignalsToLeadSignals(signals);
+  const hasFunding = s.funding?.days_ago != null && s.funding.days_ago <= 90;
+  const hasHRLarge = s.hr_change?.days_ago != null && s.hr_change.days_ago <= 14;
+  const hasHiringLarge = s.hiring?.intensity === 'Large';
+  const hasCarrier = s.carrier_change?.recent;
+  if (hasFunding || hasHRLarge || hasHiringLarge || hasCarrier) return { label: 'High', className: 'bg-destructive/10 text-destructive border-destructive/30' };
+  const hasMediumSignal = (s.hr_change?.days_ago != null && s.hr_change.days_ago <= 60) || s.hiring?.intensity === 'Medium' || (s.csuite?.days_ago != null && s.csuite.days_ago <= 90);
+  if (hasMediumSignal) return { label: 'Medium', className: 'bg-warning/10 text-warning border-warning/30' };
+  return { label: 'Low', className: 'bg-muted text-muted-foreground' };
+}
+
+function inferBenefitsPainPoints(contact: any): string[] {
+  const pains: string[] = [];
+  const emp = parseInt(contact.employeeCount, 10);
+  if (!isNaN(emp)) {
+    if (emp >= 50 && emp < 100) pains.push('ACA compliance threshold');
+    if (emp >= 100) pains.push('Benefits administration complexity');
+    if (emp >= 75) pains.push('Open enrollment scalability');
+  }
+  if (contact.signals?.jobs_60d >= 6) pains.push('Rapid headcount growth strain on HR');
+  if (contact.signals?.carrier_change?.recent) pains.push('Carrier transition risk');
+  if (contact.signals?.talent_risk?.risk) pains.push('Employee retention pressure');
+  if (contact.renewalMonth) pains.push('Upcoming renewal planning');
+  if (pains.length === 0) pains.push('Benefits optimization opportunity');
+  return pains;
+}
 
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { contacts, campaigns, bookMeeting, setContactStatus, reactivateContact } = useCrm();
   const [editing, setEditing] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(false);
 
   const contact = contacts.find(c => c.id === id);
+
+  const leadSignals = useMemo(() => contact ? contactSignalsToLeadSignals(contact.signals) : null, [contact]);
+  const reasonLine = useMemo(() => buildReasonSelectedLine(leadSignals), [leadSignals]);
 
   const leadData: WeekPanelLeadData | undefined = useMemo(() => {
     if (!contact) return undefined;
@@ -41,6 +86,7 @@ export default function ContactDetail() {
         hq_state: '',
         employee_count: contact.employeeCount,
         renewal_month: contact.renewalMonth,
+        current_carrier: contact.currentCarrier,
       },
       persona: detectPersona(contact.title),
       signals: contact.signals ? {
@@ -48,6 +94,8 @@ export default function ContactDetail() {
         hiring: contact.signals.jobs_60d ? { jobs_60d: contact.signals.jobs_60d, intensity: getHiringIntensity(contact.signals.jobs_60d) } : {},
         hr_change: contact.signals.hr_change_title ? { title: contact.signals.hr_change_title, days_ago: contact.signals.hr_change_days_ago } : {},
         csuite: contact.signals.csuite_role ? { role: contact.signals.csuite_role, days_ago: contact.signals.csuite_days_ago } : {},
+        carrier_change: contact.signals.carrier_change,
+        talent_risk: contact.signals.talent_risk,
       } : { funding: {}, hiring: {}, hr_change: {}, csuite: {} },
       reach: {
         hasEmail: !!contact.email,
@@ -55,6 +103,7 @@ export default function ContactDetail() {
         hasLinkedIn: !!contact.linkedInUrl,
       },
       _rawSignals: contact.signals,
+      manual_notes_for_ai: contact.manualNotesForAI,
     };
   }, [contact]);
 
@@ -63,6 +112,9 @@ export default function ContactDetail() {
   const campaign = campaigns.find(c => c.id === contact.campaignId);
   const progress = getContactProgress(contact);
   const presets = campaign?.weeklyPresets || [];
+  const priority = getPriorityLabel(contact.signals);
+  const persona = detectPersona(contact.title);
+  const painPoints = inferBenefitsPainPoints(contact);
 
   return (
     <Layout>
@@ -78,9 +130,6 @@ export default function ContactDetail() {
               <p className="text-sm text-muted-foreground">{contact.title} at {contact.company}</p>
             </div>
             <StatusBadge status={contact.status} />
-          </div>
-          <div className="mt-1">
-            <SignalChips chips={buildChipsFromSignals(contact.signals)} />
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit2 size={14} className="mr-1" /> Edit</Button>
@@ -110,6 +159,96 @@ export default function ContactDetail() {
           </div>
         </div>
 
+        {/* Lead Quality Summary */}
+        <div className="bg-card rounded-lg border border-border p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Zap size={14} className="text-primary" />
+            <h3 className="font-semibold text-sm text-card-foreground">Lead Quality Summary</h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <Badge variant="outline" className={`text-xs ${priority.className}`}>{priority.label} Priority</Badge>
+            <Badge variant="secondary" className="text-xs">{contact.industry || 'General'}</Badge>
+            <Badge variant="secondary" className="text-xs">{persona}</Badge>
+            <Badge variant="outline" className="text-xs">{getEmployeeTier(contact.employeeCount)} EE</Badge>
+            {contact.renewalMonth && <Badge variant="outline" className="text-xs">Renewal: {contact.renewalMonth}</Badge>}
+            {contact.currentCarrier && <Badge variant="outline" className="text-xs">Carrier: {contact.currentCarrier}</Badge>}
+          </div>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-xs text-muted-foreground">Reachability:</span>
+            <Mail size={14} className={contact.email ? 'text-primary' : 'text-muted-foreground/30'} />
+            <Phone size={14} className={contact.phone ? 'text-primary' : 'text-muted-foreground/30'} />
+            <Linkedin size={14} className={contact.linkedInUrl ? 'text-primary' : 'text-muted-foreground/30'} />
+          </div>
+          <SignalChips chips={buildChipsFromSignals(contact.signals)} />
+        </div>
+
+        {/* Company Overview (Collapsible) */}
+        <Collapsible open={overviewOpen} onOpenChange={setOverviewOpen}>
+          <div className="bg-card rounded-lg border border-border">
+            <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-accent/50 rounded-lg transition-colors">
+              <div className="flex items-center gap-2">
+                <Building2 size={14} className="text-primary" />
+                <h3 className="font-semibold text-sm text-card-foreground">Company Overview</h3>
+              </div>
+              <ChevronDown size={14} className={`text-muted-foreground transition-transform ${overviewOpen ? 'rotate-180' : ''}`} />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="px-4 pb-4 space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Industry</p>
+                    <p className="text-foreground font-medium">{contact.industry || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Employees</p>
+                    <p className="text-foreground font-medium">{contact.employeeCount || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Source</p>
+                    <p className="text-foreground font-medium">{contact.source}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Current Carrier</p>
+                    <p className="text-foreground font-medium">{contact.currentCarrier || '—'}</p>
+                  </div>
+                </div>
+                {/* Growth Indicators */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Growth Indicators</p>
+                  <div className="flex flex-wrap gap-1">
+                    {contact.signals?.jobs_60d && contact.signals.jobs_60d >= 3 && (
+                      <Badge variant="secondary" className="text-[10px]">Hiring: {contact.signals.jobs_60d} roles</Badge>
+                    )}
+                    {contact.signals?.funding_stage && contact.signals.funding_stage !== 'None' && (
+                      <Badge variant="secondary" className="text-[10px]">{contact.signals.funding_stage}</Badge>
+                    )}
+                    {!contact.signals?.jobs_60d && (!contact.signals?.funding_stage || contact.signals.funding_stage === 'None') && (
+                      <span className="text-xs text-muted-foreground italic">No growth signals detected</span>
+                    )}
+                  </div>
+                </div>
+                {/* Inferred Pain Points */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Likely Benefits Pain Points</p>
+                  <div className="flex flex-wrap gap-1">
+                    {painPoints.map((p, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px]">{p}</Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+
+        {/* Additional Context (Notes to AI) */}
+        {contact.manualNotesForAI && (
+          <div className="bg-card rounded-lg border border-border p-4">
+            <h3 className="font-semibold text-sm text-card-foreground mb-2">Additional Context (Notes to AI)</h3>
+            <p className="text-sm text-foreground">{contact.manualNotesForAI}</p>
+          </div>
+        )}
+
         {/* Info Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-card rounded-lg border border-border p-4 space-y-2">
@@ -120,6 +259,7 @@ export default function ContactDetail() {
               <p className="text-muted-foreground">Employees: <span className="text-foreground">{contact.employeeCount}</span></p>
               <p className="text-muted-foreground">Source: <span className="text-foreground">{contact.source}</span></p>
               {contact.renewalMonth && <p className="text-muted-foreground">Renewal: <span className="text-foreground">{contact.renewalMonth}</span></p>}
+              {contact.currentCarrier && <p className="text-muted-foreground">Carrier: <span className="text-foreground">{contact.currentCarrier}</span></p>}
             </div>
             <div className="flex gap-2 pt-2">
               {contact.email && (
@@ -164,19 +304,15 @@ export default function ContactDetail() {
           </div>
         </div>
 
-        {/* Company Signals */}
-        {contact.signals && (
-          <div className="bg-card rounded-lg border border-border p-4 space-y-3">
-            <h3 className="font-semibold text-sm text-card-foreground">Company Signals</h3>
-            <SignalChips chips={buildChipsFromSignals(contact.signals)} />
-          </div>
-        )}
-
         {/* 12-Week Workflow */}
         <div>
-          <h2 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
+          <h2 className="text-lg font-bold text-foreground mb-1 flex items-center gap-2">
             <Calendar size={18} /> 12-Week Drip Workflow
           </h2>
+          {/* Reason Selected */}
+          <p className="text-xs text-muted-foreground mb-3">
+            <span className="font-medium">Reason selected:</span> {reasonLine}
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Array.from({ length: 12 }, (_, i) => {
               const week = i + 1;

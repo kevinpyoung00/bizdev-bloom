@@ -49,6 +49,8 @@ function pickStrongestSignal(signals: any): { label: string; type: string } {
     return { label: `recent ${signals.funding.stage || "funding"} round (${signals.funding.days_ago}d ago)`, type: "funding" };
   if (signals?.hr_change?.days_ago != null && signals.hr_change.days_ago <= 60)
     return { label: `recent ${signals.hr_change.title || "HR leadership"} change (${signals.hr_change.days_ago}d ago)`, type: "hr_change" };
+  if (signals?.carrier_change?.recent)
+    return { label: `recent carrier change${signals.carrier_change.former_carrier ? ` from ${signals.carrier_change.former_carrier}` : ""}`, type: "carrier_change" };
   if (signals?.hiring?.jobs_60d != null && signals.hiring.jobs_60d >= 10)
     return { label: `aggressive hiring — ${signals.hiring.jobs_60d} roles in 60 days (Large intensity)`, type: "hiring_large" };
   if (signals?.hiring?.jobs_60d != null && signals.hiring.jobs_60d >= 6)
@@ -57,6 +59,8 @@ function pickStrongestSignal(signals: any): { label: string; type: string } {
     return { label: `active hiring — ${signals.hiring.jobs_60d} roles in 60 days`, type: "hiring_small" };
   if (signals?.csuite?.days_ago != null && signals.csuite.days_ago <= 90)
     return { label: `recent ${signals.csuite.role || "C-suite"} transition (${signals.csuite.days_ago}d ago)`, type: "csuite" };
+  if (signals?.talent_risk?.risk)
+    return { label: `talent risk detected${signals.talent_risk.review_change_direction ? ` (reviews trending ${signals.talent_risk.review_change_direction})` : ""}`, type: "talent_risk" };
   return { label: "growth trajectory", type: "industry_anchor" };
 }
 
@@ -64,6 +68,7 @@ function hasRecentSignals(signals: any): boolean {
   if (signals?.funding?.days_ago != null && signals.funding.days_ago <= 90) return true;
   if (signals?.hr_change?.days_ago != null && signals.hr_change.days_ago <= 60) return true;
   if (signals?.hiring?.jobs_60d != null && signals.hiring.jobs_60d >= 10) return true;
+  if (signals?.carrier_change?.recent) return true;
   return false;
 }
 
@@ -78,7 +83,7 @@ function simpleHash(s: string): number {
 /* ── Week 1 prompt builder ── */
 
 function buildWeek1Prompt(channel: string, data: any): string {
-  const { company_name, industry_label, industry_key, hq_city, hq_state, employee_count, persona, signals, contact } = data;
+  const { company_name, industry_label, industry_key, hq_city, hq_state, employee_count, persona, signals, contact, manual_notes_for_ai, current_carrier } = data;
 
   const strongest = pickStrongestSignal(signals);
   const location = [hq_city, hq_state].filter(Boolean).join(", ");
@@ -92,6 +97,8 @@ function buildWeek1Prompt(channel: string, data: any): string {
   const variantNote = `Select micro-variant ${(variantSeed % 3) + 1} of 3: vary the opening hook phrasing and CTA wording slightly so similar leads receive distinct messages.`;
 
   if (channel === "email") {
+    const notesLine = manual_notes_for_ai ? `\n- Additional context (weave naturally, one sentence max): "${manual_notes_for_ai}"` : "";
+    const carrierLine = current_carrier ? `\n- Current benefits carrier: ${current_carrier}` : "";
     return `You are a business development executive at OneDigital, a top employee benefits advisory firm.
 
 Write a personalized cold email (4-6 sentences) for Week 1 of a 12-week outreach cadence.
@@ -103,7 +110,7 @@ LEAD CONTEXT:
 - Size: ${sizeRange}
 - Persona: ${persona}
 - Strongest Signal: ${strongest.label} (type: ${strongest.type})
-- All Signals: ${JSON.stringify(signals || {})}
+- All Signals: ${JSON.stringify(signals || {})}${carrierLine}${notesLine}
 
 STRUCTURE (follow this order):
 1. **Signal-anchored opener**: Lead with "${strongest.label}" — make it the first sentence hook.
@@ -160,7 +167,7 @@ OUTPUT FORMAT (JSON):
 /* ── Weeks 2-12 prompt builder ── */
 
 function buildDripPrompt(week: number, channel: string, data: any): string {
-  const { company_name, industry_label, industry_key, persona, signals, hq_city, hq_state, employee_count, contact } = data;
+  const { company_name, industry_label, industry_key, persona, signals, hq_city, hq_state, employee_count, contact, manual_notes_for_ai } = data;
   const theme = WEEK_THEMES[week] || "Follow-up";
   const location = [hq_city, hq_state].filter(Boolean).join(", ");
   const sizeRange = employee_count ? `${employee_count}-employee` : "mid-market";
@@ -171,13 +178,14 @@ function buildDripPrompt(week: number, channel: string, data: any): string {
   const referenceSignals = recentSignals && week <= 3;
 
   if (channel === "email") {
+    const notesLine = manual_notes_for_ai ? `\nADDITIONAL CONTEXT (weave naturally, one sentence max): "${manual_notes_for_ai}"` : "";
     return `You are a business development executive at OneDigital (employee benefits advisory).
 
 Write a follow-up email (3-6 sentences) for Week ${week} of a 12-week cadence.
 
 THEME: ${theme}
 LEAD: ${company_name}, ${industry_label || "General"} (${industry_key || "general_exec"}), ${sizeRange}, ${location || "US"}
-PERSONA: ${persona}
+PERSONA: ${persona}${notesLine}
 ${referenceSignals ? `SIGNALS (reference naturally): ${JSON.stringify(signals)}` : ""}
 
 STRUCTURE:

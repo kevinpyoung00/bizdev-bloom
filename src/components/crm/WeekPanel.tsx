@@ -33,9 +33,12 @@ export interface WeekPanelLeadData {
     hiring: { jobs_60d?: number; intensity?: string };
     hr_change: { title?: string; days_ago?: number };
     csuite: { role?: string; days_ago?: number };
+    carrier_change?: { recent?: boolean; former_carrier?: string; new_carrier?: string; days_ago?: number };
+    talent_risk?: { risk?: boolean; review_change_direction?: 'up' | 'down'; days_ago?: number };
   };
   reach: { hasEmail: boolean; hasPhone: boolean; hasLinkedIn: boolean };
   _rawSignals?: import('@/types/crm').ContactSignals | null;
+  manual_notes_for_ai?: string;
 }
 
 interface Props {

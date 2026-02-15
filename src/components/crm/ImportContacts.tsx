@@ -229,6 +229,8 @@ export default function ImportContacts({ open, onOpenChange }: Props) {
         status,
         startDate: today,
         notes: noteParts.join('\n'),
+        currentCarrier: '',
+        manualNotesForAI: '',
         signals: createEmptySignals(),
       });
       count++;

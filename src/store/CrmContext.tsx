@@ -48,6 +48,8 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       lastTouchDate: '',
       nextTouchDate: contact.startDate || today,
       signals: contact.signals || createEmptySignals(),
+      currentCarrier: contact.currentCarrier || '',
+      manualNotesForAI: contact.manualNotesForAI || '',
       weekProgress: createEmptyWeekProgress(),
       touchLogs: [],
     };
