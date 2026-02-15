@@ -57,6 +57,12 @@ export default function DripWeekPanel({
 
   return (
     <div className="border border-border rounded-lg p-4 bg-card">
+      <div
+        id="drip-debug-banner"
+        style={{ position: 'sticky', top: 0, background: '#ffefc1', border: '1px solid #c99a00', color: '#5d4a00', fontSize: '12px', padding: '6px', zIndex: 9999 }}
+      >
+        DRIP PANEL ACTIVE — DripWeekPanel:59 — {new Date().toLocaleString()}
+      </div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-xs font-bold text-primary-foreground">
