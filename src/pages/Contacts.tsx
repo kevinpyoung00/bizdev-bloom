@@ -167,7 +167,7 @@ export default function Contacts() {
                             href={`https://www.google.com/search?q=${encodeURIComponent(contact.company)}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); window.open(`https://www.google.com/search?q=${encodeURIComponent(contact.company)}`, '_blank'); e.preventDefault(); }}
                             className="hover:text-primary hover:underline transition-colors inline-flex items-center gap-1"
                           >
                             {contact.company}
