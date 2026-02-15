@@ -16,6 +16,7 @@ import AccountDrawer from '@/components/lead-engine/AccountDrawer';
 import { DualStarsBadge, StarsLegend } from '@/components/lead-engine/DualStarsBadge';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
+import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 
 async function exportClaimedExcel(leads: LeadWithAccount[]) {
@@ -162,15 +163,16 @@ export default function LeadQueue() {
                   <TableHead className="w-20">Emp.</TableHead>
                   <TableHead className="w-16">Region</TableHead>
                   <TableHead>Signals</TableHead>
+                  <TableHead className="w-32">Suggested Persona</TableHead>
                   <TableHead className="w-36">Status</TableHead>
                   <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
                 ) : leads.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No leads yet. Click "Run Scoring" to generate today's queue.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground">No leads yet. Click "Run Scoring" to generate today's queue.</TableCell></TableRow>
                 ) : (
                   leads.map((lead) => {
                     const claimStatus = (lead as any).claim_status || 'new';
@@ -190,6 +192,14 @@ export default function LeadQueue() {
                         <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
                         <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
                         <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.reason?.lead_signals || lead.account.triggers)} /></TableCell>
+                        <TableCell>
+                          <SuggestedPersonaBadge
+                            employeeCount={lead.account.employee_count}
+                            industryKey={lead.industry_key}
+                            signals={lead.reason}
+                            variant="compact"
+                          />
+                        </TableCell>
                         <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
