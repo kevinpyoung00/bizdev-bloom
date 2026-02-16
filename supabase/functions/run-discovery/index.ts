@@ -121,7 +121,6 @@ function detectSignalsFromContent(markdown: string, carrierNames: string[], carr
     }
   }
 
-  // PR/News
   const newsPatterns = [/announces/i, /press\s+release/i, /new\s+location/i, /expands\s+to/i, /partnership/i, /acquisition/i, /opens\s+new/i];
   for (const p of newsPatterns) {
     if (p.test(markdown)) { signals.news = { recent: true, source: "website" }; break; }
@@ -162,6 +161,133 @@ const PDF_PATTERNS = /\.(pdf|doc|docx|pptx?)$/i;
 const SPAM_DOMAIN_PATTERNS = /\b(yelp\.com|glassdoor\.com|indeed\.com|crunchbase\.com|bloomberg\.com|bbb\.org|yellowpages|manta\.com|buzzfile|dnb\.com|zoominfo\.com|apollo\.io)\b/i;
 const SOCIAL_DOMAINS = /\b(linkedin\.com|facebook\.com|twitter\.com|instagram\.com|youtube\.com|wikipedia\.org|tiktok\.com|reddit\.com)\b/i;
 
+// ─── NEW: News/media domain list (signal-only, never create as employers) ───
+const NEWS_MEDIA_DOMAINS = new Set([
+  "bizjournals.com", "bostonglobe.com", "boston.com", "wbur.org", "wcvb.com",
+  "masslive.com", "bostonherald.com", "statnews.com", "fiercebiotech.com",
+  "fiercepharma.com", "biospace.com", "labiotech.eu", "techcrunch.com",
+  "prnewswire.com", "businesswire.com", "globenewswire.com", "reuters.com",
+  "wsj.com", "nytimes.com", "cnbc.com", "forbes.com", "inc.com",
+  "wired.com", "theverge.com", "venturebeat.com", "axios.com",
+  "patch.com", "wickedlocal.com", "nhpr.org", "vtdigger.org",
+  "courant.com", "providencejournal.com", "pressherald.com",
+  "capecodtimes.com", "gazettenet.com", "salemnews.com",
+  "sentinelandenterprise.com", "lowellsun.com", "telegram.com",
+  "southcoasttoday.com", "heraldnews.com", "tauntongazette.com",
+  "patriotledger.com", "enterprisenews.com", "metrowestdailynews.com",
+]);
+
+// ─── NEW: Ecosystem/association/accelerator patterns (signal-only) ───
+const ECOSYSTEM_PATTERNS = /\b(massbio|mass\s*life\s*sciences|mlsc|mass\s*tech\s*collaborative|cambridge\s*innovation\s*center|cic|techstars|masschallenge|greentown\s*labs|incubator|accelerator|trade\s*association|industry\s*association|economic\s*development|chamber\s*of\s*commerce)\b/i;
+
+// ─── NEW: Generic non-employer page patterns ───
+const GENERIC_PAGE_PATTERNS = /\b(greetings|boston\s+is\s+the\s+largest|top\s+\d+\s+(companies|employers|startups)|best\s+places\s+to\s+work|listicle|ranking|directory|award\s+winners)\b/i;
+
+// ─── NEW: Path-only rejection patterns (these paths are articles/resources, not company homepages) ───
+const ARTICLE_PATH_PATTERNS = /\/(news|press|blog|article|story|post|publications?|resources|reports?|policies|policy|events?|webinar|podcast|newsletter|insights?|media|releases?|announcements?|awards?|rankings?)\b/i;
+
+// ─── NEW: Check if URL is a root-domain page (path is / or empty) ───
+function isRootDomainUrl(url: string): boolean {
+  try {
+    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return u.pathname === "/" || u.pathname === "" || u.pathname === "/index.html";
+  } catch {
+    return false;
+  }
+}
+
+// ─── NEW: Check if URL path suggests non-employer content ───
+function isArticleOrResourcePath(url: string): boolean {
+  try {
+    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    // Paths with more than 2 segments are likely articles
+    const segments = u.pathname.split("/").filter(Boolean);
+    if (segments.length > 2) return true;
+    // Known article/resource path patterns
+    if (ARTICLE_PATH_PATTERNS.test(u.pathname)) return true;
+    // Careers/jobs paths are OK — we'll resolve to root domain
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// ─── NEW: Check if URL is a careers/jobs path that should resolve to root ───
+const CAREERS_PATH_PATTERNS = /\/(careers|jobs|employment|join-us|join|work-with-us|openings|hiring|positions|opportunities|team|about|contact|who-we-are)\b/i;
+
+function isCareerOrAboutPath(url: string): boolean {
+  try {
+    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return CAREERS_PATH_PATTERNS.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+// ─── NEW: Is news/media domain ───
+function isNewsDomain(domain: string): boolean {
+  const d = domain.toLowerCase();
+  for (const nd of NEWS_MEDIA_DOMAINS) {
+    if (d === nd || d.endsWith("." + nd)) return true;
+  }
+  return false;
+}
+
+// ─── NEW: Extract employer name from scraped markdown ───
+function extractEmployerName(markdown: string, fallbackTitle: string, domain: string): string | null {
+  if (!markdown) return null;
+  // Try schema.org Organization name
+  const orgMatch = markdown.match(/"@type"\s*:\s*"Organization"[^}]*"name"\s*:\s*"([^"]+)"/);
+  if (orgMatch) return orgMatch[1].trim();
+  // Try reverse order
+  const orgMatch2 = markdown.match(/"name"\s*:\s*"([^"]+)"[^}]*"@type"\s*:\s*"Organization"/);
+  if (orgMatch2) return orgMatch2[1].trim();
+  // Try og:site_name
+  const ogMatch = markdown.match(/og:site_name[^"]*"([^"]+)"/i);
+  if (ogMatch) return ogMatch[1].trim();
+  // Use title but clean it
+  if (fallbackTitle) {
+    const cleaned = fallbackTitle.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome|Careers|Jobs|About|Contact)$/i, "").trim();
+    if (cleaned.length > 2 && cleaned.length < 80) return cleaned;
+  }
+  return null;
+}
+
+// ─── NEW: Verify employer entity on root domain markdown ───
+function verifyEmployerEntity(markdown: string): boolean {
+  if (!markdown || markdown.length < 100) return false;
+  // Must have some employer indicators
+  const hasOrgSchema = /"@type"\s*:\s*"Organization"/i.test(markdown);
+  const hasCompanyName = /\b(inc|llc|co\b|corp|ltd|company|group)\b/i.test(markdown);
+  const hasAbout = /\b(about\s+us|our\s+(company|team|mission|story))\b/i.test(markdown);
+  const hasContact = /\b(contact\s+us|headquarters|office|address)\b/i.test(markdown);
+  const hasCareers = /\b(careers|jobs|open\s+positions|join\s+(our|the)\s+team)\b/i.test(markdown);
+  const hasProducts = /\b(products|services|solutions|our\s+work|what\s+we\s+do)\b/i.test(markdown);
+  // Need at least 2 employer indicators
+  const score = [hasOrgSchema, hasCompanyName, hasAbout, hasContact, hasCareers, hasProducts].filter(Boolean).length;
+  return score >= 2;
+}
+
+// ─── NEW: Classify ecosystem/association orgs ───
+function isEcosystemOrg(name: string, domain: string, markdown: string): boolean {
+  if (ECOSYSTEM_PATTERNS.test(name)) return true;
+  if (ECOSYSTEM_PATTERNS.test(domain)) return true;
+  if (markdown && ECOSYSTEM_PATTERNS.test(markdown.slice(0, 3000))) {
+    // Additional check: does the page self-describe as an association/ecosystem?
+    const lower = markdown.slice(0, 3000).toLowerCase();
+    if (/\b(member\s*organizations?|our\s*members|member\s*companies|industry\s*group|advocacy)\b/i.test(lower)) return true;
+  }
+  return false;
+}
+
+// ─── NEW: Check generic/listicle page ───
+function isGenericPage(markdown: string): boolean {
+  if (!markdown) return true;
+  if (markdown.length < 200) return true;
+  if (GENERIC_PAGE_PATTERNS.test(markdown.slice(0, 2000))) return true;
+  return false;
+}
+
 function classifyIcp(
   name: string,
   domain: string,
@@ -186,6 +312,9 @@ function classifyIcp(
   // University lab/center/department check
   if (!toggles.allow_university_research && UNIVERSITY_LAB_PATTERNS.test(name)) return "excluded_university_lab";
 
+  // Ecosystem/association/accelerator — signal-only, not employers
+  if (isEcosystemOrg(name, domain, markdown)) return "excluded_ecosystem";
+
   // .edu domain handling
   if (lowerDomain.endsWith(".edu") && !toggles.allow_edu) return "excluded_university_lab";
 
@@ -197,6 +326,9 @@ function classifyIcp(
 
   // Social/directory/spam
   if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain)) return "excluded_generic";
+
+  // Generic page without employer entity
+  if (isGenericPage(markdown) && !verifyEmployerEntity(markdown)) return "excluded_generic";
 
   return "employer";
 }
@@ -278,7 +410,6 @@ const QUERY_TEMPLATES = [
   "{subsector} company {geo} contact",
   "{industry} {trigger} Massachusetts",
   "New England {subsector} company",
-  // EB-specific employer-focused templates
   "school district employment Massachusetts",
   "nonprofit careers Massachusetts",
   "community health center jobs Massachusetts",
@@ -433,10 +564,12 @@ Deno.serve(async (req) => {
     }
 
     // ─── Firecrawl Search for net-new domains ───
+    // NEW: Track all rejection categories
     const candidateDomains: Map<string, { url: string; title: string; description: string }> = new Map();
     const searchErrors: string[] = [];
     let rejectedCarrier = 0, rejectedHospital = 0, rejectedUniversityLab = 0;
     let rejectedPdf = 0, rejectedGeneric = 0, rejectedUnknownHq = 0;
+    let rejectedNewsDomain = 0, rejectedPathOnly = 0, rejectedEcosystem = 0;
 
     if (firecrawlKey) {
       for (const query of queries) {
@@ -450,12 +583,42 @@ Deno.serve(async (req) => {
           if (searchResp.ok) {
             const searchData = await searchResp.json();
             for (const result of searchData.data || []) {
-              const domain = extractDomain(result.url);
+              const url = result.url || "";
+              const domain = extractDomain(url);
               if (!domain) continue;
+
+              // ── GUARD A: Skip existing domains ──
               if (existingDomains.has(domain)) continue;
+
+              // ── GUARD B: Social/spam domains ──
               if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain)) continue;
+
+              // ── GUARD C: NEWS/MEDIA DOMAIN → signal-only, skip ──
+              if (isNewsDomain(domain)) {
+                rejectedNewsDomain++;
+                continue;
+              }
+
+              // ── GUARD D: PDF / non-HTML file extension ──
+              if (PDF_PATTERNS.test(url)) {
+                rejectedPdf++;
+                continue;
+              }
+
+              // ── GUARD E: Article/resource path (not careers/about) ──
+              if (!isRootDomainUrl(url) && isArticleOrResourcePath(url) && !isCareerOrAboutPath(url)) {
+                rejectedPathOnly++;
+                continue;
+              }
+
+              // If URL is a careers/about path, resolve to root domain for scraping
+              // The domain is already extracted as root, so we scrape https://{domain}
               if (!candidateDomains.has(domain)) {
-                candidateDomains.set(domain, { url: result.url, title: result.title || "", description: result.description || "" });
+                candidateDomains.set(domain, {
+                  url: `https://${domain}`,  // Always scrape root domain
+                  title: result.title || "",
+                  description: result.description || "",
+                });
               }
             }
           } else {
@@ -469,9 +632,9 @@ Deno.serve(async (req) => {
       console.log("No FIRECRAWL_API_KEY — enriching existing accounts only");
     }
 
-    console.log(`Found ${candidateDomains.size} candidate domains from ${queries.length} queries`);
+    console.log(`Found ${candidateDomains.size} candidate domains from ${queries.length} queries (rejected: news=${rejectedNewsDomain}, path=${rejectedPathOnly}, pdf=${rejectedPdf})`);
 
-    // ─── Scrape + HQ extract + ICP classify + create accounts ───
+    // ─── Scrape ROOT DOMAIN + HQ extract + ICP classify + create accounts ───
     let candidatesCreated = 0;
     let candidatesUpdated = 0;
     let hqMA = 0;
@@ -490,10 +653,11 @@ Deno.serve(async (req) => {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+        // ALWAYS scrape root domain
         const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ url: `https://${domain}`, formats: ["markdown"], onlyMainContent: true }),
+          body: JSON.stringify({ url: `https://${domain}`, formats: ["markdown"], onlyMainContent: false }),
           signal: controller.signal,
         });
         clearTimeout(timeout);
@@ -506,9 +670,14 @@ Deno.serve(async (req) => {
         return null;
       }
 
-      const companyName = info.title
-        ? info.title.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome)$/i, "").trim()
-        : domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+      // ── GUARD: Verify employer entity on root domain ──
+      const employerName = extractEmployerName(markdown, info.title, domain);
+      if (!employerName) return { rejected: "excluded_generic" };
+
+      // ── GUARD: Generic/listicle/non-employer page ──
+      if (!verifyEmployerEntity(markdown)) return { rejected: "excluded_generic" };
+
+      const companyName = employerName;
 
       const icpClass = classifyIcp(companyName, domain, markdown, blacklistDomains, blacklistNames, toggles);
       if (icpClass !== "employer") return { rejected: icpClass };
@@ -544,6 +713,7 @@ Deno.serve(async (req) => {
           else if (reason === "excluded_hospital") rejectedHospital++;
           else if (reason === "excluded_university_lab") rejectedUniversityLab++;
           else if (reason === "excluded_pdf") rejectedPdf++;
+          else if (reason === "excluded_ecosystem") rejectedEcosystem++;
           else if (reason === "unknown_hq") rejectedUnknownHq++;
           else if (reason === "non_ne") discardedNonNE++;
           else rejectedGeneric++;
@@ -632,6 +802,9 @@ Deno.serve(async (req) => {
       rejected_pdf: rejectedPdf,
       rejected_generic: rejectedGeneric,
       rejected_unknown_hq: rejectedUnknownHq,
+      rejected_news_domain: rejectedNewsDomain,
+      rejected_path_only: rejectedPathOnly,
+      rejected_ecosystem: rejectedEcosystem,
       kept_candidates: keptCandidates.length,
       errors: [...searchErrors, ...scrapeErrors].slice(0, 10),
     };
