@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2 } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -185,6 +185,7 @@ export default function LeadQueue() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [discoverySummary, setDiscoverySummary] = useState<DiscoverySummaryData | null>(null);
   const [previewCandidates, setPreviewCandidates] = useState<PreviewCandidate[]>([]);
+  const [keptBySubtype, setKeptBySubtype] = useState<Record<string, number>>({});
 
   const filteredLeads = leads.filter(l => {
     const d365Status = (l.account as any).d365_status || 'unknown';
@@ -310,6 +311,7 @@ export default function LeadQueue() {
       onSuccess: (data) => {
         setDiscoverySummary(data);
         setPreviewCandidates(data.preview_candidates || []);
+        setKeptBySubtype(data.kept_by_subtype || {});
       },
     });
   };
@@ -332,6 +334,7 @@ export default function LeadQueue() {
       onSuccess: (data) => {
         setDiscoverySummary(data);
         setPreviewCandidates(data.preview_candidates || []);
+        setKeptBySubtype(data.kept_by_subtype || {});
         setDiscoveryPanelOpen(false);
         if (params.score_after) {
           runScoring.mutate(false);
@@ -341,6 +344,26 @@ export default function LeadQueue() {
   };
 
   const needsReviewCount = leads.filter(l => (l.account as any).needs_review).length;
+
+  // ── Purge Today's Batch ──
+  const handlePurgeToday = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayUnclaimed = leads.filter(l => {
+      const cs = (l as any).claim_status || 'new';
+      return cs === 'new' && l.run_date === today;
+    });
+    if (todayUnclaimed.length === 0) { toast.info('No unclaimed leads from today to purge'); return; }
+    const ids = todayUnclaimed.map(l => l.id);
+    bulkReject.mutate(
+      { leadIds: ids, reason: 'purge_today_batch' },
+      {
+        onSuccess: () => {
+          toast.success(`Purged ${ids.length} unclaimed leads from today`);
+          setSelectedIds(new Set());
+        },
+      }
+    );
+  };
 
   // ── Empty state ──
   const renderEmptyState = () => {
@@ -458,6 +481,9 @@ export default function LeadQueue() {
               </div>
               <Button variant="ghost" size="sm" className="text-xs h-7" onClick={handleClaimAllVisible}>
                 <CheckCircle2 size={12} className="mr-1" /> Claim all visible claimable
+              </Button>
+              <Button variant="ghost" size="sm" className="text-xs h-7 text-destructive hover:text-destructive" onClick={handlePurgeToday}>
+                <Trash2 size={12} className="mr-1" /> Purge Today's Batch
               </Button>
             </div>
 
@@ -677,6 +703,7 @@ export default function LeadQueue() {
         candidates={previewCandidates}
         onProceedToScore={() => runScoring.mutate(false)}
         isScoringPending={runScoring.isPending}
+        keptBySubtype={keptBySubtype}
       />
     </Layout>
   );

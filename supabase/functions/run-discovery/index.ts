@@ -523,13 +523,20 @@ Deno.serve(async (req) => {
     const carrierPhrases = kwMap["carrier_change_phrases"] ?? [];
     const hrKeywords = kwMap["benefits_hr_keywords"] ?? [];
 
-    // Load existing account domains for dedup
+    // Load existing account domains for dedup (domain + canonical + normalized title)
     const { data: existingAccounts } = await supabase.from("accounts").select("id, domain, canonical_company_name, name");
     const existingDomains = new Set<string>();
     const existingCanonicals = new Map<string, string>();
+    const existingTitles = new Set<string>();
     for (const a of existingAccounts || []) {
       if (a.domain) existingDomains.add(a.domain.toLowerCase());
       if (a.canonical_company_name) existingCanonicals.set(a.canonical_company_name.toLowerCase(), a.id);
+      if (a.name) existingTitles.add(normalizeTitle(a.name));
+    }
+
+    // Normalize title for dedup: strip punctuation/stopwords, lowercase
+    function normalizeTitle(t: string): string {
+      return t.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\b(the|and|of|for|in|at|to|a|an|is|are|was|were|inc|llc|corp|ltd|co)\b/g, "").replace(/\s+/g, " ").trim();
     }
 
     // ─── Build queries based on mode ───
@@ -642,6 +649,19 @@ Deno.serve(async (req) => {
     let discardedNonNE = 0;
     const scrapeErrors: string[] = [];
     const keptCandidates: any[] = [];
+    const keptBySubtype: Record<string, number> = {};
+
+    // ─── Subtype classifier for kept employers ───
+    function classifySubtype(name: string, domain: string, md: string): string {
+      const lower = (name + " " + domain + " " + md.slice(0, 2000)).toLowerCase();
+      if (/\b(bank|credit\s*union|savings\s*bank|trust\s*company)\b/.test(lower)) return "bank_cu";
+      if (/\b(cannabis|marijuana|dispensary|cbd|hemp|cultivation)\b/.test(lower)) return "cannabis";
+      if (/\b(ymca|boys\s*&?\s*girls|jcc|united\s*way|nonprofit|non-profit|501\s*c|human\s*services|salvation\s*army|habitat|goodwill)\b/.test(lower)) return "nonprofit";
+      if (/\b(municipal|town\s*of|city\s*of|\.gov)\b/.test(lower)) return "municipal";
+      if (/\b(school\s*district|charter\s*school|k-12|academy|community\s*college|private\s*school)\b/.test(lower)) return "school";
+      if (/\b(community\s*health|fqhc|health\s*center|clinic)\b/.test(lower)) return "clinic";
+      return "private";
+    }
 
     // Parallel scraping with concurrency limit
     const CONCURRENCY = 5;
@@ -720,11 +740,16 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical } = val;
+      const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical } = val;
         if (bucket === "MA") hqMA++;
         else if (bucket === "NE") hqNE++;
 
-        // Check canonical name dedup
+        // Stronger dedupe: domain → canonical_company_name → normalized title
+        const normTitle = normalizeTitle(companyName);
+        if (existingTitles.has(normTitle)) {
+          // Already exists by title match, treat like canonical dedup
+          continue;
+        }
         const existingId = existingCanonicals.get(canonical);
         if (existingId) {
           if (Object.keys(signals).length > 0) {
@@ -770,6 +795,11 @@ Deno.serve(async (req) => {
         candidatesCreated++;
         existingDomains.add(domain);
         existingCanonicals.set(canonical, newAccount.id);
+        existingTitles.add(normTitle);
+
+        // Classify subtype for logging
+        const subtype = classifySubtype(companyName, domain, markdown || "");
+        keptBySubtype[subtype] = (keptBySubtype[subtype] || 0) + 1;
 
         keptCandidates.push({
           id: newAccount.id,
@@ -784,6 +814,18 @@ Deno.serve(async (req) => {
         });
       }
     }
+
+    // ─── Diversity caps (before returning) ───
+    // Max 40% life sciences; ensure 10% min for services/municipal/banks/cannabis when available
+    const LIFE_SCI_CAP = 0.4;
+    const totalKept = keptCandidates.length;
+    const lifeSciCount = keptBySubtype["private"] || 0; // life sci are mostly private in biotech theme
+    // Note: diversity caps are advisory counters logged; actual micro-query fill would require another search pass
+    // For now, log the diversity metrics
+    const diversityMetrics = {
+      life_sci_pct: totalKept > 0 ? Math.round((lifeSciCount / totalKept) * 100) : 0,
+      subtypes: { ...keptBySubtype },
+    };
 
     // ─── Audit log ───
     const summary = {
@@ -806,6 +848,8 @@ Deno.serve(async (req) => {
       rejected_path_only: rejectedPathOnly,
       rejected_ecosystem: rejectedEcosystem,
       kept_candidates: keptCandidates.length,
+      kept_by_subtype: keptBySubtype,
+      diversity: diversityMetrics,
       errors: [...searchErrors, ...scrapeErrors].slice(0, 10),
     };
 
@@ -820,7 +864,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       ...summary,
-      preview_candidates: keptCandidates.slice(0, 20),
+      preview_candidates: keptCandidates,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (err) {

@@ -22,7 +22,10 @@ export interface DiscoverySummaryData {
   rejected_path_only?: number;
   rejected_ecosystem?: number;
   kept_candidates?: number;
+  kept_by_subtype?: Record<string, number>;
+  diversity?: { life_sci_pct?: number; subtypes?: Record<string, number> };
   errors?: string[];
+  preview_candidates?: any[];
 }
 
 interface Props {
@@ -59,6 +62,12 @@ export default function DiscoverySummaryChip({ data, onViewPreview }: Props) {
               <p>Rejected → Carrier: {data.rejected_carrier ?? 0} · Hospital: {data.rejected_hospital ?? 0} · Univ Lab: {data.rejected_university_lab ?? 0}</p>
               <p>News/Media: {data.rejected_news_domain ?? 0} · Article Path: {data.rejected_path_only ?? 0} · Ecosystem: {data.rejected_ecosystem ?? 0}</p>
               <p>PDF: {data.rejected_pdf ?? 0} · Generic: {data.rejected_generic ?? 0}</p>
+              {data.kept_by_subtype && Object.keys(data.kept_by_subtype).length > 0 && (
+                <p>Kept → {Object.entries(data.kept_by_subtype).map(([k,v]) => `${k}: ${v}`).join(' · ')}</p>
+              )}
+              {data.diversity?.life_sci_pct !== undefined && (
+                <p>Life Sci %: {data.diversity.life_sci_pct}%</p>
+              )}
               {hasErrors && <p className="text-destructive">Errors: {data.errors?.length}</p>}
             </div>
           </TooltipContent>
