@@ -4,7 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Upload, FileSpreadsheet, CheckCircle2, ArrowRight, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Upload, FileSpreadsheet, CheckCircle2, ArrowRight, Loader2, Plus, Trash2, AlertTriangle, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -63,6 +64,23 @@ const HEADER_MAP: Record<string, RegExp> = {
   hq_state: /state|hq.?state|region/i,
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  first_name: 'First Name',
+  last_name: 'Last Name',
+  title: 'Job Title',
+  email: 'Email',
+  phone: 'Phone',
+  linkedin_url: 'LinkedIn URL',
+  company_name: 'Company Name',
+  company_domain: 'Company Domain',
+  industry: 'Industry',
+  employee_count: 'Employee Count',
+  hq_city: 'HQ City',
+  hq_state: 'HQ State',
+};
+
+const REQUIRED_FIELDS = ['first_name', 'last_name', 'company_name'];
+
 const LINKEDIN_URL_RE = /linkedin\.com/i;
 
 function autoMapHeaders(headers: string[]): Record<string, string> {
@@ -87,7 +105,7 @@ function pickBestField(entries: { value: string; source: string }[], priority: s
   return nonEmpty[0];
 }
 
-type Step = 'upload' | 'preview' | 'importing' | 'done';
+type Step = 'upload' | 'mapping' | 'preview' | 'importing' | 'done';
 
 interface Props {
   open: boolean;
@@ -100,12 +118,15 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
   const [merged, setMerged] = useState<MergedContact[]>([]);
   const [step, setStep] = useState<Step>('upload');
   const [importResult, setImportResult] = useState<{ accounts: number; contacts: number; merged: number } | null>(null);
+  // Per-file manual header mappings: fileIndex -> { field -> csvHeader }
+  const [fileMappings, setFileMappings] = useState<Record<number, Record<string, string>>>({});
 
   const reset = () => {
     setFiles([]);
     setMerged([]);
     setStep('upload');
     setImportResult(null);
+    setFileMappings({});
   };
 
   const addFile = useCallback((file: File) => {
@@ -126,7 +147,14 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         });
 
         const source = detectSource(file.name);
-        setFiles(prev => [...prev, { name: file.name, source, rows, headers }]);
+        setFiles(prev => {
+          const newFiles = [...prev, { name: file.name, source, rows, headers }];
+          // Auto-map headers for this new file
+          const idx = newFiles.length - 1;
+          const autoMap = autoMapHeaders(headers);
+          setFileMappings(prev => ({ ...prev, [idx]: autoMap }));
+          return newFiles;
+        });
         toast.success(`Added ${file.name} (${rows.length} rows, source: ${source})`);
       } catch {
         toast.error('Could not parse file');
@@ -135,13 +163,40 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
     reader.readAsArrayBuffer(file);
   }, []);
 
+  const handleShowMapping = () => {
+    // Initialize mappings for any files that don't have them yet
+    const newMappings = { ...fileMappings };
+    files.forEach((f, i) => {
+      if (!newMappings[i]) {
+        newMappings[i] = autoMapHeaders(f.headers);
+      }
+    });
+    setFileMappings(newMappings);
+    setStep('mapping');
+  };
+
+  const updateFieldMapping = (fileIndex: number, field: string, csvHeader: string) => {
+    setFileMappings(prev => ({
+      ...prev,
+      [fileIndex]: {
+        ...prev[fileIndex],
+        [field]: csvHeader === '__none__' ? '' : csvHeader,
+      },
+    }));
+  };
+
   const handleMerge = () => {
-    // Flatten all rows with source
     const allRows: { row: Record<string, string>; source: string; mapping: Record<string, string> }[] = [];
-    for (const f of files) {
-      const mapping = autoMapHeaders(f.headers);
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const mapping = fileMappings[i] || autoMapHeaders(f.headers);
+      // Filter out empty mappings
+      const cleanMapping: Record<string, string> = {};
+      for (const [k, v] of Object.entries(mapping)) {
+        if (v) cleanMapping[k] = v;
+      }
       for (const row of f.rows) {
-        allRows.push({ row, source: f.source, mapping });
+        allRows.push({ row, source: f.source, mapping: cleanMapping });
       }
     }
 
@@ -356,7 +411,14 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                       <Badge variant="outline" className="text-[10px]">{f.source}</Badge>
                       <span className="text-xs text-muted-foreground">{f.rows.length} rows</span>
                     </div>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                      setFiles(prev => prev.filter((_, j) => j !== i));
+                      setFileMappings(prev => {
+                        const next = { ...prev };
+                        delete next[i];
+                        return next;
+                      });
+                    }}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
@@ -384,11 +446,99 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
 
             {files.length > 0 && (
               <div className="flex justify-end">
-                <Button size="sm" onClick={handleMerge}>
-                  Merge & Preview <ArrowRight size={14} className="ml-1" />
+                <Button size="sm" onClick={handleShowMapping}>
+                  Review Mapping <ArrowRight size={14} className="ml-1" />
                 </Button>
               </div>
             )}
+          </div>
+        )}
+
+        {step === 'mapping' && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Review how your CSV columns map to contact fields. Fix any <span className="text-destructive font-medium">unmapped</span> fields below.
+            </p>
+
+            {files.map((f, fileIdx) => {
+              const mapping = fileMappings[fileIdx] || {};
+              const unmappedHeaders = f.headers.filter(h => !Object.values(mapping).includes(h));
+              const missingRequired = REQUIRED_FIELDS.filter(field => !mapping[field]);
+
+              return (
+                <div key={fileIdx} className="border border-border rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet size={14} className="text-primary" />
+                    <span className="text-sm font-medium text-foreground">{f.name}</span>
+                    <Badge variant="outline" className="text-[10px]">{f.source}</Badge>
+                    <span className="text-xs text-muted-foreground">{f.rows.length} rows · {f.headers.length} columns</span>
+                  </div>
+
+                  {missingRequired.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 rounded px-3 py-2">
+                      <AlertTriangle size={12} />
+                      Missing required: {missingRequired.map(f => FIELD_LABELS[f]).join(', ')}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.keys(FIELD_LABELS).map(field => {
+                      const currentHeader = mapping[field] || '';
+                      const isMapped = !!currentHeader;
+                      const isRequired = REQUIRED_FIELDS.includes(field);
+
+                      return (
+                        <div key={field} className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 w-32 shrink-0">
+                            {isMapped ? (
+                              <Check size={12} className="text-primary shrink-0" />
+                            ) : (
+                              <AlertTriangle size={12} className={`shrink-0 ${isRequired ? 'text-destructive' : 'text-muted-foreground'}`} />
+                            )}
+                            <span className={`text-xs truncate ${isRequired && !isMapped ? 'text-destructive font-medium' : 'text-foreground'}`}>
+                              {FIELD_LABELS[field]}{isRequired ? ' *' : ''}
+                            </span>
+                          </div>
+                          <Select
+                            value={currentHeader || '__none__'}
+                            onValueChange={(val) => updateFieldMapping(fileIdx, field, val)}
+                          >
+                            <SelectTrigger className="h-7 text-xs flex-1">
+                              <SelectValue placeholder="Not mapped" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">
+                                <span className="text-muted-foreground">— Not mapped —</span>
+                              </SelectItem>
+                              {f.headers.map(h => (
+                                <SelectItem key={h} value={h}>
+                                  {h}
+                                  {f.rows[0]?.[h] ? ` (e.g. "${String(f.rows[0][h]).slice(0, 30)}")` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {unmappedHeaders.length > 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      <span className="font-medium">Unused columns:</span>{' '}
+                      {unmappedHeaders.map(h => h).join(', ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setStep('upload')}>Back</Button>
+              <Button size="sm" onClick={handleMerge}>
+                Merge & Preview <ArrowRight size={14} className="ml-1" />
+              </Button>
+            </div>
           </div>
         )}
 
@@ -432,7 +582,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setStep('upload')}>Back</Button>
+              <Button variant="outline" size="sm" onClick={() => setStep('mapping')}>Back</Button>
               <Button size="sm" onClick={handleImport}>
                 Import {merged.length} Records <ArrowRight size={14} className="ml-1" />
               </Button>
