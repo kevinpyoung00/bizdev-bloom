@@ -7,11 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { useLeadQueue, useRunScoring, type QueueScope } from '@/hooks/useLeadEngine';
+import { useLeadQueue, useRunScoring, useRunDiscovery, type QueueScope } from '@/hooks/useLeadEngine';
 import { useClaimLead, useRejectLead, useMarkUploaded, useRejectedLeads, useRestoreLead, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -160,6 +160,7 @@ export default function LeadQueue() {
   const { data: leads = [], isLoading } = useLeadQueue(scope);
   const { data: rejectedLeads = [] } = useRejectedLeads();
   const runScoring = useRunScoring();
+  const runDiscovery = useRunDiscovery();
   const claimLead = useClaimLead();
   const rejectLead = useRejectLead();
   const markUploaded = useMarkUploaded();
@@ -288,6 +289,10 @@ export default function LeadQueue() {
             <CounterBar leads={leads} hideOwned={hideOwned} />
           </div>
           <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => runDiscovery.mutate()} disabled={runDiscovery.isPending}>
+              {runDiscovery.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Radar size={16} className="mr-1" />}
+              Run Discovery
+            </Button>
             <Button variant="outline" size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
               {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : null}
               Run Scoring

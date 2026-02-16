@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 export interface LeadWithAccount {
   id: string;
@@ -198,6 +199,35 @@ export function useRunScoring() {
         description: isAlreadyScored ? "Today's lead queue is already built. Data is up to date." : msg,
         variant: isAlreadyScored ? 'default' : 'destructive',
       });
+    },
+  });
+}
+
+export function useRunDiscovery() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('run-discovery', {
+        body: {},
+      });
+      if (error) throw error;
+      if (data && data.success === false) {
+        throw new Error(data.error || 'Discovery returned an error');
+      }
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['needs-review-accounts'] });
+      sonnerToast.success('Discovery complete', {
+        description: `Added: ${data.candidates_added} · Updated: ${data.candidates_updated} · MA: ${data.hq_MA} · NE: ${data.hq_NE} · Discarded (non-NE): ${data.discarded_non_NE}`,
+        duration: 8000,
+      });
+    },
+    onError: (err: any) => {
+      sonnerToast.error('Discovery failed', { description: err.message });
     },
   });
 }
