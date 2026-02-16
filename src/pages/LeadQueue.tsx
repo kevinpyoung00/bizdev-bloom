@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Layout from '@/components/crm/Layout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { useLeadQueue, useRunScoring } from '@/hooks/useLeadEngine';
+import { useLeadQueue, useRunScoring, type QueueScope } from '@/hooks/useLeadEngine';
 import { useClaimLead, useRejectLead, useMarkUploaded, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -25,6 +26,20 @@ import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 
+// ── localStorage helpers ──
+const STORAGE_KEY = 'lead-queue-filters';
+function loadFilters() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as { scope?: QueueScope; hideOwned?: boolean; showNeedsReviewOnly?: boolean };
+  } catch { return null; }
+}
+function saveFilters(f: { scope: QueueScope; hideOwned: boolean; showNeedsReviewOnly: boolean }) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(f));
+}
+
+// ── Export claimed ──
 async function exportClaimedExcel(leads: LeadWithAccount[]) {
   const claimed = leads.filter(l => (l as any).claim_status === 'claimed');
   if (claimed.length === 0) { toast.info('No claimed leads to export'); return; }
@@ -74,8 +89,44 @@ async function exportClaimedExcel(leads: LeadWithAccount[]) {
   });
 }
 
+// ── Counter bar ──
+function CounterBar({ leads, hideOwned }: { leads: LeadWithAccount[]; hideOwned: boolean }) {
+  const d365 = { unknown: 0, unowned: 0, owned: 0, duplicate_inactive: 0 };
+  const claim = { new: 0, claimed: 0, rejected: 0 };
+  let needsReview = 0;
+
+  for (const l of leads) {
+    const ds = (l.account as any).d365_status || 'unknown';
+    if (ds in d365) d365[ds as keyof typeof d365]++;
+    const cs = (l as any).claim_status || 'new';
+    if (cs in claim) claim[cs as keyof typeof claim]++;
+    if ((l.account as any).needs_review) needsReview++;
+  }
+
+  return (
+    <p className="text-[11px] text-muted-foreground leading-relaxed">
+      Total: {leads.length}
+      {' · D365 → '}unknown {d365.unknown} · unowned {d365.unowned} · owned {d365.owned} · dup/inactive {d365.duplicate_inactive}
+      {' · Claim → '}new {claim.new} · claimed {claim.claimed} · rejected {claim.rejected}
+      {' · NeedsReview '}{needsReview}
+      {hideOwned && <span className="text-orange-500 ml-1">(owned hidden)</span>}
+    </p>
+  );
+}
+
 export default function LeadQueue() {
-  const { data: leads = [], isLoading } = useLeadQueue();
+  const [searchParams] = useSearchParams();
+  const debugMode = searchParams.get('debug') === '1';
+
+  const saved = loadFilters();
+  const [scope, setScope] = useState<QueueScope>(saved?.scope || 'today');
+  const [hideOwned, setHideOwned] = useState(saved?.hideOwned ?? false);
+  const [showNeedsReviewOnly, setShowNeedsReviewOnly] = useState(saved?.showNeedsReviewOnly ?? false);
+
+  // Persist filters
+  useEffect(() => { saveFilters({ scope, hideOwned, showNeedsReviewOnly }); }, [scope, hideOwned, showNeedsReviewOnly]);
+
+  const { data: leads = [], isLoading } = useLeadQueue(scope);
   const runScoring = useRunScoring();
   const claimLead = useClaimLead();
   const rejectLead = useRejectLead();
@@ -84,8 +135,6 @@ export default function LeadQueue() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [hideOwned, setHideOwned] = useState(false);
-  const [showNeedsReviewOnly, setShowNeedsReviewOnly] = useState(false);
   const [importD365Open, setImportD365Open] = useState(false);
   const [multiImportOpen, setMultiImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('queue');
@@ -166,15 +215,44 @@ export default function LeadQueue() {
 
   const needsReviewCount = leads.filter(l => (l.account as any).needs_review).length;
 
+  // ── Empty state ──
+  const renderEmptyState = () => {
+    if (leads.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={12} className="text-center py-12">
+            <div className="space-y-3">
+              <p className="text-muted-foreground">No leads for the selected scope. Try running scoring or changing the scope to "Last 7 days".</p>
+              <p className="text-xs text-muted-foreground">Owned accounts may be hidden — unhide in Filters.</p>
+              <div className="flex justify-center gap-2">
+                <Button size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
+                  {runScoring.isPending && <Loader2 size={14} className="mr-1 animate-spin" />} Run Scoring
+                </Button>
+                {scope === 'today' && (
+                  <Button size="sm" variant="outline" onClick={() => setScope('7d')}>Switch to Last 7 days</Button>
+                )}
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+      );
+    }
+    return (
+      <TableRow>
+        <TableCell colSpan={12} className="text-center py-12 text-muted-foreground">
+          No leads match current filters. Uncheck "Hide Owned" or "Show Needs Review only".
+        </TableCell>
+      </TableRow>
+    );
+  };
+
   return (
     <Layout>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Lead Queue</h1>
-            <p className="text-sm text-muted-foreground">
-              Today's ranked leads — {filteredLeads.length} of {leads.length} companies · Export → D365 Check → Import Results → Triage
-            </p>
+            <CounterBar leads={leads} hideOwned={hideOwned} />
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
@@ -214,8 +292,16 @@ export default function LeadQueue() {
           <TabsContent value="queue" className="space-y-4">
             <StarsLegend />
 
-            {/* Filters */}
+            {/* Scope selector + Filters */}
             <div className="flex items-center gap-6 flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground mr-1">Scope:</span>
+                <Button size="sm" variant={scope === 'today' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('today')}>Today</Button>
+                <Button size="sm" variant={scope === '7d' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('7d')}>Last 7 days</Button>
+                {debugMode && (
+                  <Button size="sm" variant={scope === 'all' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('all')}>All (debug)</Button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Switch checked={hideOwned} onCheckedChange={setHideOwned} id="hide-owned" />
                 <label htmlFor="hide-owned" className="text-xs text-muted-foreground cursor-pointer">Hide Owned</label>
@@ -254,7 +340,7 @@ export default function LeadQueue() {
                     {isLoading ? (
                       <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
                     ) : filteredLeads.length === 0 ? (
-                      <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">{leads.length === 0 ? 'No leads yet. Click "Run Scoring" to generate today\'s queue.' : 'No leads match current filters.'}</TableCell></TableRow>
+                      renderEmptyState()
                     ) : (
                       filteredLeads.map((lead) => {
                         const claimStatus = (lead as any).claim_status || 'new';

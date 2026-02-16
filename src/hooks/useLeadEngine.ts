@@ -37,18 +37,30 @@ export interface LeadWithAccount {
   };
 }
 
-export function useLeadQueue(runDate?: string) {
-  const date = runDate || new Date().toISOString().split('T')[0];
+export type QueueScope = 'today' | '7d' | 'all';
+
+export function useLeadQueue(scope: QueueScope = 'today') {
+  const today = new Date().toISOString().split('T')[0];
 
   return useQuery({
-    queryKey: ['lead-queue', date],
+    queryKey: ['lead-queue', scope],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('lead_queue')
         .select('*, accounts(*)')
-        .eq('run_date', date)
+        .neq('claim_status', 'rejected')
         .order('priority_rank', { ascending: true });
 
+      if (scope === 'today') {
+        query = query.eq('run_date', today);
+      } else if (scope === '7d') {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        query = query.gte('run_date', sevenDaysAgo.toISOString().split('T')[0]);
+      }
+      // 'all' — no date filter
+
+      const { data, error } = await query;
       if (error) throw error;
 
       return (data || []).map((row: any) => ({
