@@ -84,7 +84,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   // Zywave helpers
   const zywaveId = (account as any).zywave_id;
   const zywaveHref = zywaveId
-    ? `https://app.zywave.com/company/${zywaveId}`
+    ? `https://app.zywave.com/search?query=${encodeURIComponent(zywaveId)}`
     : `https://app.zywave.com/search?query=${encodeURIComponent((account.name || '') + ' ' + (account.hq_state || ''))}`;
 
   // Build lead data for drip generation
@@ -262,6 +262,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               signals={rawReason}
               companyName={account.name}
               zywaveId={zywaveId}
+              hqState={account.hq_state}
               variant="full"
             />
           </div>

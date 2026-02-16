@@ -383,6 +383,9 @@ export default function LeadQueue() {
                                     )}
                                   </Tooltip>
                                 </TooltipProvider>
+                                <Button variant="ghost" size="sm" className="h-6 mt-0.5 px-2 text-[10px] text-primary gap-1" onClick={(e) => { e.stopPropagation(); handleView(lead); }}>
+                                  <Eye size={10} /> Details
+                                </Button>
                               </div>
                             </TableCell>
                             <TableCell><IndustryChip industry={lead.account.industry} /></TableCell>
@@ -436,7 +439,7 @@ export default function LeadQueue() {
                                   </>
                                 )}
                                 <Button variant="ghost" size="sm" className="h-7 w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-3" onClick={() => handleView(lead)}>
-                                  <Eye size={12} className="mr-1" /> Details
+                                  <Eye size={12} className="mr-1" /> Analysis
                                 </Button>
                               </div>
                             </TableCell>
