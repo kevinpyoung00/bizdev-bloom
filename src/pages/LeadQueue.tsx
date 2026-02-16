@@ -371,20 +371,8 @@ export default function LeadQueue() {
                             <TableCell>
                               <div>
                                 <span className="font-medium text-foreground">{lead.account.name}</span>
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="block text-[10px] text-muted-foreground truncate max-w-[140px]">{rec.primary}</span>
-                                    </TooltipTrigger>
-                                    {rec.alternates.length > 0 && (
-                                      <TooltipContent side="bottom" className="text-xs">
-                                        Alternates: {rec.alternates.join(', ')}
-                                      </TooltipContent>
-                                    )}
-                                  </Tooltip>
-                                </TooltipProvider>
-                                <Button variant="ghost" size="sm" className="h-6 mt-0.5 px-2 text-[10px] text-primary gap-1" onClick={(e) => { e.stopPropagation(); handleView(lead); }}>
-                                  <Eye size={10} /> Details
+                                <Button size="sm" className="h-5 mt-0.5 px-2 text-[10px] bg-blue-600 hover:bg-blue-700 text-white rounded" onClick={(e) => { e.stopPropagation(); handleView(lead); }}>
+                                  Details
                                 </Button>
                               </div>
                             </TableCell>
@@ -434,13 +422,10 @@ export default function LeadQueue() {
                                     ) : (
                                       <Button size="sm" className="h-7 w-full rounded-full bg-red-600 hover:bg-red-700 text-white text-[10px] px-3" onClick={() => setRejectingId(lead.id)}>
                                         <X size={12} className="mr-1" /> Reject
-                                      </Button>
-                                    )}
-                                  </>
-                                )}
-                                <Button variant="ghost" size="sm" className="h-7 w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-3" onClick={() => handleView(lead)}>
-                                  <Eye size={12} className="mr-1" /> Analysis
                                 </Button>
+                                  )}
+                                </>
+                              )}
                               </div>
                             </TableCell>
                           </TableRow>
