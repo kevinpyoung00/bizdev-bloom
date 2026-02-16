@@ -7,11 +7,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { useLeadQueue, useRunScoring, type QueueScope } from '@/hooks/useLeadEngine';
-import { useClaimLead, useRejectLead, useMarkUploaded, REJECT_REASONS } from '@/hooks/useLeadActions';
+import { useClaimLead, useRejectLead, useMarkUploaded, useRejectedLeads, useRestoreLead, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -21,9 +22,11 @@ import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
 import D365StatusBadge from '@/components/lead-engine/D365StatusBadge';
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
+import IndustryChip from '@/components/lead-engine/IndustryChip';
 import { exportD365CheckCSV, ImportD365Results } from '@/components/lead-engine/D365ExportImport';
 import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
+import { recommendPersona } from '@/lib/personaRecommend';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 
 // ── localStorage helpers ──
@@ -127,10 +130,12 @@ export default function LeadQueue() {
   useEffect(() => { saveFilters({ scope, hideOwned, showNeedsReviewOnly }); }, [scope, hideOwned, showNeedsReviewOnly]);
 
   const { data: leads = [], isLoading } = useLeadQueue(scope);
+  const { data: rejectedLeads = [] } = useRejectedLeads();
   const runScoring = useRunScoring();
   const claimLead = useClaimLead();
   const rejectLead = useRejectLead();
   const markUploaded = useMarkUploaded();
+  const restoreLead = useRestoreLead();
   const [selectedLead, setSelectedLead] = useState<LeadWithAccount | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -287,6 +292,12 @@ export default function LeadQueue() {
                 <Badge variant="destructive" className="text-[9px] px-1.5 py-0 ml-1">{needsReviewCount}</Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="rejected" className="flex items-center gap-1">
+              Rejected
+              {rejectedLeads.length > 0 && (
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 ml-1">{rejectedLeads.length}</Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="queue" className="space-y-4">
@@ -326,13 +337,13 @@ export default function LeadQueue() {
                       <TableHead className="w-14">Rank</TableHead>
                       <TableHead className="w-28">Priority</TableHead>
                       <TableHead>Company</TableHead>
-                      <TableHead>Industry</TableHead>
+                      <TableHead className="w-28">Industry</TableHead>
                       <TableHead className="w-20">Emp.</TableHead>
                       <TableHead className="w-16">Region</TableHead>
                       <TableHead>Signals</TableHead>
-                      <TableHead className="w-32">Suggested Persona</TableHead>
-                      <TableHead className="w-44">D365 Status</TableHead>
-                      <TableHead className="w-36">Status</TableHead>
+                      <TableHead className="w-32">Persona</TableHead>
+                      <TableHead className="w-28">D365</TableHead>
+                      <TableHead className="w-28">Status</TableHead>
                       <TableHead className="w-40">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -345,6 +356,7 @@ export default function LeadQueue() {
                       filteredLeads.map((lead) => {
                         const claimStatus = (lead as any).claim_status || 'new';
                         const d365Status = (lead.account as any).d365_status || 'unknown';
+                        const rec = recommendPersona(lead.account.employee_count, lead.industry_key, lead.reason);
                         return (
                           <TableRow
                             key={lead.id}
@@ -359,12 +371,21 @@ export default function LeadQueue() {
                             <TableCell>
                               <div>
                                 <span className="font-medium text-foreground">{lead.account.name}</span>
-                                {(lead.account as any).canonical_company_name && (
-                                  <span className="block text-[10px] text-muted-foreground">{(lead.account as any).canonical_company_name}</span>
-                                )}
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="block text-[10px] text-muted-foreground truncate max-w-[140px]">{rec.primary}</span>
+                                    </TooltipTrigger>
+                                    {rec.alternates.length > 0 && (
+                                      <TooltipContent side="bottom" className="text-xs">
+                                        Alternates: {rec.alternates.join(', ')}
+                                      </TooltipContent>
+                                    )}
+                                  </Tooltip>
+                                </TooltipProvider>
                               </div>
                             </TableCell>
-                            <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{lead.account.industry || '—'}</TableCell>
+                            <TableCell><IndustryChip industry={lead.account.industry} /></TableCell>
                             <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
                             <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
                             <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.reason?.lead_signals || lead.account.triggers)} /></TableCell>
@@ -433,6 +454,43 @@ export default function LeadQueue() {
             <Card>
               <CardContent className="p-0">
                 <NeedsReviewTab />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="rejected">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Rejected At</TableHead>
+                      <TableHead className="w-28">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rejectedLeads.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">No rejected leads.</TableCell>
+                      </TableRow>
+                    ) : (
+                      rejectedLeads.map((lead: any) => (
+                        <TableRow key={lead.id}>
+                          <TableCell className="font-medium text-foreground">{lead.account?.name || '—'}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{lead.reject_reason || '—'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{lead.updated_at ? new Date(lead.updated_at).toLocaleDateString() : '—'}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => restoreLead.mutate(lead.id)} disabled={restoreLead.isPending}>
+                              <RotateCcw size={12} /> Restore
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </TabsContent>
