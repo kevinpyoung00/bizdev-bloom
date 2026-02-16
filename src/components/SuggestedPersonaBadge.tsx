@@ -1,7 +1,8 @@
 import { Badge } from '@/components/ui/badge';
-import { Target, Search, ExternalLink } from 'lucide-react';
+import { Target, Search, ExternalLink, Clipboard } from 'lucide-react';
 import { recommendPersona, buildTitleKeywords, type PersonaRecommendation } from '@/lib/personaRecommend';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 interface Props {
   employeeCount: number | null | undefined;
@@ -19,21 +20,21 @@ function buildSalesNavUrl(companyName: string, titles: string[]): string {
   return `https://www.linkedin.com/sales/search/people?keywords=${encodeURIComponent(keywords)}`;
 }
 
-function buildZywaveSearchUrl(companyName: string, state?: string | null): string {
-  const q = state ? `${companyName} ${state}` : companyName;
-  return `https://app.zywave.com/search?query=${encodeURIComponent(q)}`;
+function handleZywaveSearch(companyName: string, hqState?: string | null) {
+  const searchText = `${companyName} ${hqState || ''}`.trim();
+  navigator.clipboard.writeText(searchText);
+  window.open('https://miedge.zywave.com/edge/eb', '_blank', 'noopener');
+  toast.success(`Copied '${searchText}' — paste in Zywave's search`);
 }
 
 function QuickSearchLinks({ rec, companyName, zywaveId, hqState }: { rec: PersonaRecommendation; companyName: string; zywaveId?: string | null; hqState?: string | null }) {
   const primarySalesNav = buildSalesNavUrl(companyName, [rec.primary]);
   const backupTitles = rec.alternates.slice(0, 2);
   const backupSalesNav = backupTitles.length > 0 ? buildSalesNavUrl(companyName, backupTitles) : null;
-  const zywaveHref = zywaveId
-    ? `https://app.zywave.com/search?query=${encodeURIComponent(zywaveId)}`
-    : buildZywaveSearchUrl(companyName, hqState);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {/* Primary persona + SalesNav */}
       <div className="flex flex-col gap-1">
         <span className="text-[11px] font-semibold text-foreground">{rec.primary}</span>
         <a href={primarySalesNav} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
@@ -42,6 +43,8 @@ function QuickSearchLinks({ rec, companyName, zywaveId, hqState }: { rec: Person
           </Button>
         </a>
       </div>
+
+      {/* Backup persona + SalesNav */}
       {backupTitles.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-[11px] font-medium text-muted-foreground">{backupTitles[0]}</span>
@@ -52,11 +55,27 @@ function QuickSearchLinks({ rec, companyName, zywaveId, hqState }: { rec: Person
           </a>
         </div>
       )}
-      <a href={zywaveHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-        <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
-          <ExternalLink size={10} /> {zywaveId ? 'Open Zywave' : 'Search Zywave'}
+
+      {/* Zywave */}
+      {zywaveId ? (
+        <a href={`https://miedge.zywave.com/edge/eb`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+          <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
+            <ExternalLink size={10} /> Open Zywave
+          </Button>
+        </a>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-[10px] gap-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleZywaveSearch(companyName, hqState);
+          }}
+        >
+          <Clipboard size={10} /> Zywave — Search EB
         </Button>
-      </a>
+      )}
     </div>
   );
 }

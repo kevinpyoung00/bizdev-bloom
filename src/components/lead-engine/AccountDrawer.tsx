@@ -83,9 +83,13 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
   // Zywave helpers
   const zywaveId = (account as any).zywave_id;
-  const zywaveHref = zywaveId
-    ? `https://app.zywave.com/search?query=${encodeURIComponent(zywaveId)}`
-    : `https://app.zywave.com/search?query=${encodeURIComponent((account.name || '') + ' ' + (account.hq_state || ''))}`;
+
+  const handleZywaveSearch = () => {
+    const searchText = `${account.name || ''} ${account.hq_state || ''}`.trim();
+    navigator.clipboard.writeText(searchText);
+    window.open('https://miedge.zywave.com/edge/eb', '_blank', 'noopener');
+    toast.success(`Copied '${searchText}' — paste in Zywave's search`);
+  };
 
   // Build lead data for drip generation
   const buildLeadData = () => {
@@ -244,9 +248,15 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               </div>
             ) : (
               <>
-                <a href={zywaveHref} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                  <ExternalLink size={12} /> {zywaveId ? 'Open Zywave' : 'Search Zywave'}
-                </a>
+                {zywaveId ? (
+                  <a href="https://miedge.zywave.com/edge/eb" target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                    <ExternalLink size={12} /> Open Zywave
+                  </a>
+                ) : (
+                  <button className="text-xs text-primary hover:underline flex items-center gap-1" onClick={(e) => { e.stopPropagation(); handleZywaveSearch(); }}>
+                    <ExternalLink size={12} /> Zywave — Search EB
+                  </button>
+                )}
                 <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setZywaveDraft(zywaveId || ''); setEditingZywave(true); }}>
                   <Pencil size={11} />
                 </Button>
