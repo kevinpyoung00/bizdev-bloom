@@ -21,9 +21,12 @@ export interface DiscoverySummaryData {
   rejected_news_domain?: number;
   rejected_path_only?: number;
   rejected_ecosystem?: number;
+  rejected_industry_mismatch?: number;
+  rejected_repeat_30d?: number;
   kept_candidates?: number;
   kept_by_subtype?: Record<string, number>;
-  diversity?: { life_sci_pct?: number; subtypes?: Record<string, number> };
+  kept_by_industry?: Record<string, number>;
+  diversity?: { life_sci_pct?: number; life_sci_over_cap?: boolean; subtypes?: Record<string, number>; by_industry?: Record<string, number>; under_represented?: string[]; micro_query_fills?: number };
   errors?: string[];
   preview_candidates?: any[];
 }
@@ -39,7 +42,8 @@ export default function DiscoverySummaryChip({ data, onViewPreview }: Props) {
   const hasErrors = (data.errors?.length ?? 0) > 0;
   const totalRejected = (data.rejected_carrier ?? 0) + (data.rejected_hospital ?? 0) +
     (data.rejected_university_lab ?? 0) + (data.rejected_pdf ?? 0) + (data.rejected_generic ?? 0) +
-    (data.rejected_news_domain ?? 0) + (data.rejected_path_only ?? 0) + (data.rejected_ecosystem ?? 0);
+    (data.rejected_news_domain ?? 0) + (data.rejected_path_only ?? 0) + (data.rejected_ecosystem ?? 0) +
+    (data.rejected_industry_mismatch ?? 0) + (data.rejected_repeat_30d ?? 0);
 
   return (
     <TooltipProvider>
@@ -61,7 +65,7 @@ export default function DiscoverySummaryChip({ data, onViewPreview }: Props) {
               <p>Discarded (non-NE): {data.discarded_non_NE ?? 0} · Unknown HQ: {data.rejected_unknown_hq ?? 0}</p>
               <p>Rejected → Carrier: {data.rejected_carrier ?? 0} · Hospital: {data.rejected_hospital ?? 0} · Univ Lab: {data.rejected_university_lab ?? 0}</p>
               <p>News/Media: {data.rejected_news_domain ?? 0} · Article Path: {data.rejected_path_only ?? 0} · Ecosystem: {data.rejected_ecosystem ?? 0}</p>
-              <p>PDF: {data.rejected_pdf ?? 0} · Generic: {data.rejected_generic ?? 0}</p>
+              <p>PDF: {data.rejected_pdf ?? 0} · Generic: {data.rejected_generic ?? 0} · Industry Mismatch: {data.rejected_industry_mismatch ?? 0} · Repeat 30d: {data.rejected_repeat_30d ?? 0}</p>
               {data.kept_by_subtype && Object.keys(data.kept_by_subtype).length > 0 && (
                 <p>Kept → {Object.entries(data.kept_by_subtype).map(([k,v]) => `${k}: ${v}`).join(' · ')}</p>
               )}
