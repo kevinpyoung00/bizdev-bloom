@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // ─── Geography helpers ───
 const MA_NAMES = ["MA", "MASSACHUSETTS"];
-const NE_STATES = ["CT", "RI", "NH", "ME", "VT", "CONNECTICUT", "RHODE ISLAND", "NEW HAMPSHIRE", "MAINE", "VERMONT"];
-const NE_CODES = new Set(["CT", "RI", "NH", "ME", "VT"]);
+const NE_STATES_SET = new Set(["CT", "RI", "NH", "ME", "VT"]);
+const NE_FULL = new Set(["CONNECTICUT", "RHODE ISLAND", "NEW HAMPSHIRE", "MAINE", "VERMONT"]);
 
 function normalizeState(s: string | null): string {
   if (!s) return "";
@@ -19,7 +19,7 @@ function normalizeState(s: string | null): string {
 function getGeoBucket(state: string): "MA" | "NE" | "US" {
   const s = normalizeState(state);
   if (MA_NAMES.includes(s)) return "MA";
-  if (NE_STATES.includes(s)) return "NE";
+  if (NE_STATES_SET.has(s) || NE_FULL.has(s)) return "NE";
   return "US";
 }
 
@@ -84,29 +84,28 @@ function detectSignalsFromContent(markdown: string, carrierNames: string[], carr
   if (!markdown) return signals;
   const lower = markdown.toLowerCase();
 
-  const hiringPatterns = [/(\d+)\+?\s*open\s*(positions|roles|jobs)/i, /join\s+our\s+team/i, /we['']re\s+hiring/i, /career\s+opportunities/i];
+  const hiringPatterns = [/(\d+)\+?\s*open\s*(positions|roles|jobs)/i, /join\s+our\s+team/i, /we['']re\s+hiring/i, /career\s+opportunities/i, /now\s+hiring/i, /job\s+openings/i];
   for (const p of hiringPatterns) {
     const m = markdown.match(p);
     if (m) { signals.open_roles_60d = m[1] ? parseInt(m[1]) : 5; break; }
   }
 
-  const fundingPatterns = [/series\s+([a-e])/i, /raised\s+\$[\d,.]+\s*(million|m|billion|b)/i, /new\s+office|new\s+location|expanding\s+to/i];
+  const fundingPatterns = [/series\s+([a-e])/i, /raised\s+\$[\d,.]+\s*(million|m|billion|b)/i, /funding\s+round/i, /venture\s+funding/i, /capital\s+raise/i, /seed\s+round/i];
   for (const p of fundingPatterns) {
     const m = markdown.match(p);
     if (m) { signals.funding = { stage: m[1] ? `Series ${m[1].toUpperCase()}` : "Growth", months_ago: 3 }; break; }
   }
 
-  // HR / C-suite detection
-  const hrPatterns = [/chief\s+people\s+officer/i, /vp\s+(of\s+)?people/i, /chro/i, /vp\s+(of\s+)?human\s+resources/i, /head\s+of\s+people/i];
+  const hrPatterns = [/chief\s+people\s+officer/i, /vp\s+(of\s+)?people/i, /chro/i, /vp\s+(of\s+)?human\s+resources/i, /head\s+of\s+people/i, /appointed/i, /names\s+new/i];
   for (const p of hrPatterns) {
     if (p.test(markdown)) { signals.hr_change = { recent: true, source: "website" }; break; }
   }
-  const csuitePatterns = [/new\s+c[efo]o/i, /executive\s+appointment/i, /named?\s+(ceo|cfo|coo|cto|cio)/i];
+
+  const csuitePatterns = [/new\s+c[efo]o/i, /new\s+cto/i, /new\s+cio/i, /executive\s+appointment/i, /named?\s+(ceo|cfo|coo|cto|cio)/i, /promoted\s+to/i];
   for (const p of csuitePatterns) {
     if (p.test(markdown)) { signals.csuite_change = { recent: true, source: "website" }; break; }
   }
 
-  // Carrier change proximity
   if (carrierNames.length > 0 && carrierPhrases.length > 0) {
     for (const carrier of carrierNames) {
       const cIdx = lower.indexOf(carrier.toLowerCase());
@@ -122,10 +121,19 @@ function detectSignalsFromContent(markdown: string, carrierNames: string[], carr
     }
   }
 
-  // HR/Benefits keywords
+  // PR/News
+  const newsPatterns = [/announces/i, /press\s+release/i, /new\s+location/i, /expands\s+to/i, /partnership/i, /acquisition/i, /opens\s+new/i];
+  for (const p of newsPatterns) {
+    if (p.test(markdown)) { signals.news = { recent: true, source: "website" }; break; }
+  }
+
   if (hrKeywords.length > 0) {
     const found = hrKeywords.filter(kw => lower.includes(kw.toLowerCase()));
-    if (found.length > 0) signals.news = { keywords: found, source: "website" };
+    if (found.length > 0) {
+      if (!signals.news) signals.news = {};
+      signals.news.keywords = found;
+      signals.news.source = "website";
+    }
   }
 
   return signals;
@@ -142,8 +150,55 @@ function isHighIntent(triggers: Record<string, any>): { highIntent: boolean; rea
   if (triggers.csuite_change?.recent) reasons.push("csuite_recent");
   if (triggers.carrier_change?.recent) reasons.push("carrier_change_recent");
   if ((triggers.open_roles_60d ?? 0) >= 8) reasons.push(`hiring_${triggers.open_roles_60d}_roles`);
-  if (triggers.news?.keywords?.length >= 2) reasons.push("strong_news");
+  if (triggers.news?.recent) reasons.push("strong_news");
   return { highIntent: reasons.length > 0, reasons };
+}
+
+// ─── ICP Classification ───
+const CARRIER_PATTERNS = /\b(blue\s*cross|bcbs|bcbsma|point32health|tufts\s*health|harvard\s*pilgrim|aetna|cigna|united\s*health|uhc|anthem|humana|kaiser|umr|surest|oxford\s*health)\b/i;
+const HOSPITAL_PATTERNS = /\b(hospital|medical\s*center|health\s*system|mass\s*general|brigham|beth\s*israel|lahey|steward\s*health|atrius|partners\s*health|dana[\s-]?farber)\b/i;
+const UNIVERSITY_LAB_PATTERNS = /\b(broad\s*institute|wyss\s*institute|koch\s*institute|lincoln\s*lab|center\s+for\s+|department\s+of\s+|institute\s+of\s+|laboratory\s+of\s+)\b/i;
+const PDF_PATTERNS = /\.(pdf|doc|docx|pptx?)$/i;
+const SPAM_DOMAIN_PATTERNS = /\b(yelp\.com|glassdoor\.com|indeed\.com|crunchbase\.com|bloomberg\.com|bbb\.org|yellowpages|manta\.com|buzzfile|dnb\.com|zoominfo\.com|apollo\.io)\b/i;
+const SOCIAL_DOMAINS = /\b(linkedin\.com|facebook\.com|twitter\.com|instagram\.com|youtube\.com|wikipedia\.org|tiktok\.com|reddit\.com)\b/i;
+
+function classifyIcp(
+  name: string,
+  domain: string,
+  markdown: string,
+  blacklistDomains: string[],
+  blacklistNames: string[],
+  toggles: { allow_edu: boolean; allow_gov: boolean; allow_hospital_systems: boolean; allow_university_research: boolean },
+): string {
+  const lowerName = name.toLowerCase();
+  const lowerDomain = domain.toLowerCase();
+
+  // Blacklist check
+  if (blacklistDomains.some(d => lowerDomain.includes(d.toLowerCase()))) return "excluded_carrier";
+  if (blacklistNames.some(n => lowerName.includes(n.toLowerCase()))) return "excluded_carrier";
+
+  // Carrier check
+  if (CARRIER_PATTERNS.test(name) || CARRIER_PATTERNS.test(markdown.slice(0, 2000))) return "excluded_carrier";
+
+  // Hospital system check
+  if (!toggles.allow_hospital_systems && (HOSPITAL_PATTERNS.test(name) || HOSPITAL_PATTERNS.test(markdown.slice(0, 2000)))) return "excluded_hospital";
+
+  // University lab/center/department check
+  if (!toggles.allow_university_research && UNIVERSITY_LAB_PATTERNS.test(name)) return "excluded_university_lab";
+
+  // .edu domain handling
+  if (lowerDomain.endsWith(".edu") && !toggles.allow_edu) return "excluded_university_lab";
+
+  // .gov domain handling
+  if (lowerDomain.endsWith(".gov") && !toggles.allow_gov) return "excluded_generic";
+
+  // PDF/non-HTML
+  if (PDF_PATTERNS.test(domain)) return "excluded_pdf";
+
+  // Social/directory/spam
+  if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain)) return "excluded_generic";
+
+  return "employer";
 }
 
 // ─── Rotating themes ───
@@ -152,19 +207,50 @@ interface DayTheme {
 }
 
 const DAY_THEMES: Record<number, DayTheme> = {
-  1: { key: "biotech_life_sciences", label: "Life Sciences / Biotech", industries: ["biotech", "life sciences", "pharmaceuticals", "genomics"], subSectors: ["gene therapy", "CRO", "diagnostics", "clinical trials", "drug discovery", "biologics", "mRNA", "cell therapy", "precision medicine", "immunotherapy"] },
-  2: { key: "tech_pst", label: "Tech / SaaS", industries: ["technology", "SaaS", "software", "IT services"], subSectors: ["cybersecurity", "fintech", "edtech", "healthtech", "cloud infrastructure", "AI platform", "data analytics", "DevOps", "enterprise software", "B2B SaaS"] },
-  3: { key: "advanced_mfg_med_devices", label: "Manufacturing / Med Devices", industries: ["manufacturing", "medical devices", "precision engineering"], subSectors: ["medtech engineering", "CNC machining", "electronics manufacturing", "defense contractor", "semiconductor equipment", "industrial automation", "3D printing", "additive manufacturing"] },
-  4: { key: "healthcare_social_assistance", label: "Healthcare / Clinics / Providers", industries: ["healthcare", "clinics", "medical providers"], subSectors: ["urgent care", "dental group", "physical therapy", "home health", "mental health", "community health center", "telehealth", "primary care network"] },
-  5: { key: "professional_services", label: "Professional Services / Financial", industries: ["professional services", "consulting", "financial services"], subSectors: ["accounting firm", "law firm", "staffing agency", "marketing agency", "wealth management", "IT consulting", "management consulting", "real estate"] },
-  6: { key: "hiring_sweep", label: "Hiring Velocity Sweep", industries: ["rapid growth company", "scaling startup", "high growth"], subSectors: ["talent acquisition", "workforce expansion", "mass hiring", "new office opening"] },
-  0: { key: "trigger_sweep", label: "Leadership / Funding / Carrier Triggers", industries: ["executive transition", "funding round", "benefits renewal"], subSectors: ["M&A activity", "carrier change", "IPO preparation", "new leadership"] },
+  1: {
+    key: "biotech_life_sciences", label: "Life Sciences / Biotech",
+    industries: ["biotech", "life sciences", "pharmaceuticals", "genomics"],
+    subSectors: ["gene therapy", "CRO", "contract research", "diagnostics", "clinical trials", "drug discovery", "biologics", "mRNA", "cell therapy", "precision medicine", "bioinformatics", "proteomics", "immunotherapy", "biosimilars", "reagents", "independent lab"],
+  },
+  2: {
+    key: "tech_pst", label: "Tech / SaaS",
+    industries: ["technology", "SaaS", "software", "IT services"],
+    subSectors: ["cybersecurity", "fintech", "edtech", "healthtech", "proptech", "martech", "cloud infrastructure", "AI platform", "data analytics", "DevOps", "enterprise software", "B2B SaaS", "IoT platform", "robotics software", "cannabis tech"],
+  },
+  3: {
+    key: "advanced_mfg_med_devices", label: "Manufacturing / Med Devices",
+    industries: ["manufacturing", "medical devices", "precision engineering"],
+    subSectors: ["medtech engineering", "CNC machining", "injection molding", "electronics manufacturing", "defense contractor", "aerospace parts", "semiconductor equipment", "clean energy manufacturing", "industrial automation", "3D printing", "additive manufacturing", "quality systems", "cannabis packaging", "cannabis equipment"],
+  },
+  4: {
+    key: "healthcare_social_assistance", label: "Healthcare / Clinics / Providers",
+    industries: ["healthcare", "clinics", "medical providers", "behavioral health", "community health center"],
+    subSectors: ["urgent care", "dental group", "physical therapy", "home health", "mental health", "substance abuse treatment", "hospice", "primary care network", "community health center", "FQHC", "surgical center", "radiology group", "telehealth", "senior care", "assisted living"],
+  },
+  5: {
+    key: "professional_services", label: "Professional Services / Financial Services",
+    industries: ["professional services", "consulting", "financial services", "insurance brokerage", "bank", "credit union"],
+    subSectors: ["accounting firm", "law firm", "staffing agency", "marketing agency", "wealth management", "private equity", "venture capital", "architecture firm", "engineering consulting", "IT consulting", "management consulting", "real estate", "credit union", "community bank", "regional bank"],
+  },
+  6: {
+    key: "hiring_sweep", label: "Hiring Velocity Sweep",
+    industries: ["any"],
+    subSectors: ["rapid growth", "scaling company", "talent acquisition", "mass hiring", "workforce expansion", "new office", "high growth startup", "cannabis dispensary hiring", "nonprofit careers", "school district employment", "municipal jobs"],
+  },
+  0: {
+    key: "trigger_sweep", label: "Leadership / Funding / Carrier Triggers",
+    industries: ["any"],
+    subSectors: ["executive transition", "funding round", "benefits renewal", "carrier change", "M&A activity", "IPO preparation"],
+  },
 };
 
 const GEO_TERMS = [
-  "Boston", "Cambridge", "Worcester", "Waltham", "Lowell", "Andover", "New Bedford",
-  "Springfield", "North Shore MA", "South Shore MA", "Cape Cod", "Western Massachusetts",
-  "Central Massachusetts", "Framingham", "Quincy", "Newton", "Route 128 corridor", "MetroWest",
+  "Boston", "Cambridge", "Worcester", "Waltham", "Lowell", "Andover",
+  "New Bedford", "Springfield", "North Shore MA", "South Shore MA",
+  "Cape Cod", "Western Massachusetts", "Central Massachusetts",
+  "Framingham", "Quincy", "Newton", "Somerville", "Brockton",
+  "Needham", "Burlington MA", "Lexington MA", "Bedford MA",
+  "Route 128 corridor", "MetroWest",
 ];
 
 const NE_GEO_TERMS = [
@@ -173,12 +259,12 @@ const NE_GEO_TERMS = [
 ];
 
 const TRIGGER_KEYWORDS: Record<string, string[]> = {
-  funding: ["raises $", "Series A", "Series B", "Series C", "funding round", "venture funding"],
-  hr_leader: ["Chief People Officer", "VP People", "CHRO", "VP Human Resources", "Head of People"],
-  csuite: ["new CEO", "new CFO", "new COO", "new CTO", "executive appointment"],
-  carrier_change: ["switches benefits carrier", "Point32Health", "Harvard Pilgrim", "Tufts Health Plan", "BCBS", "UHC", "Aetna", "Cigna"],
-  hiring: ["we're hiring", "open roles", "careers", "join our team", "career opportunities"],
-  pr_news: ["announces", "press release", "opens new", "expands to", "partnership"],
+  funding: ["raises $", "Series A", "Series B", "Series C", "funding round", "venture funding", "growth equity", "capital raise", "seed round"],
+  hr_leader: ["Chief People Officer", "VP People", "CHRO", "VP Human Resources", "Head of People", "appointed", "names new", "hires"],
+  csuite: ["new CEO", "new CFO", "new COO", "new CTO", "new CIO", "executive appointment", "promoted to", "names new CEO"],
+  carrier_change: ["switches benefits carrier", "Point32Health", "Harvard Pilgrim", "Tufts Health Plan", "BCBS", "UHC", "Aetna", "Cigna", "Anthem", "Humana", "UMR", "Surest", "benefits renewal"],
+  hiring: ["we're hiring", "open roles", "careers", "join our team", "now hiring", "job openings", "career opportunities"],
+  pr_news: ["announces", "press release", "opens", "expands", "new location", "partnership", "acquisition"],
 };
 
 const QUERY_TEMPLATES = [
@@ -189,7 +275,18 @@ const QUERY_TEMPLATES = [
   "HQ Massachusetts {industry}",
   "{industry} company careers MA",
   "{geo} {industry} about us",
-  "{subsector} company {geo}",
+  "{subsector} company {geo} contact",
+  "{industry} {trigger} Massachusetts",
+  "New England {subsector} company",
+  // EB-specific employer-focused templates
+  "school district employment Massachusetts",
+  "nonprofit careers Massachusetts",
+  "community health center jobs Massachusetts",
+  "credit union careers Massachusetts",
+  "cannabis dispensary jobs Massachusetts",
+  "cannabis cultivation hiring Massachusetts",
+  "{geo} employer {industry}",
+  "municipality careers {geo}",
 ];
 
 function pickRandom<T>(arr: T[], n: number): T[] {
@@ -205,11 +302,11 @@ function buildQueries(params: {
   subSectors?: string[];
   maxQueries?: number;
 }): string[] {
-  const { industries = [], triggers = [], geoTerms = GEO_TERMS, subSectors = [], maxQueries = 8 } = params;
+  const { industries = [], triggers = [], geoTerms = GEO_TERMS, subSectors = [], maxQueries = 10 } = params;
   const queries: Set<string> = new Set();
 
-  const geos = pickRandom(geoTerms, 4);
-  const subs = pickRandom(subSectors, 3);
+  const geos = pickRandom(geoTerms, 5);
+  const subs = pickRandom(subSectors, 4);
   const triggerKeys = triggers.length > 0 ? triggers : pickRandom(Object.keys(TRIGGER_KEYWORDS), 2);
   const triggerTerms: string[] = [];
   for (const tk of triggerKeys) {
@@ -217,7 +314,7 @@ function buildQueries(params: {
     triggerTerms.push(...pickRandom(terms, 2));
   }
 
-  const templates = pickRandom(QUERY_TEMPLATES, 6);
+  const templates = pickRandom(QUERY_TEMPLATES, Math.min(maxQueries + 2, QUERY_TEMPLATES.length));
   for (const tpl of templates) {
     const geo = pickRandom(geos, 1)[0] || "Massachusetts";
     const industry = pickRandom(industries, 1)[0] || "company";
@@ -250,7 +347,7 @@ function extractDomain(url: string): string | null {
 // ─── Canonicalize company name ───
 function canonicalize(name: string): string {
   return name
-    .replace(/\b(inc|llc|co|corp|ltd|limited|corporation|company|group|holdings|plc|lp|llp)\b\.?/gi, "")
+    .replace(/\b(inc|llc|co|corp|ltd|limited|corporation|company|group|holdings|plc|lp|llp|pllc|pc|pa|dba|enterprises)\b\.?/gi, "")
     .replace(/[^\w\s]/g, "")
     .replace(/\s+/g, " ")
     .trim()
@@ -270,10 +367,20 @@ Deno.serve(async (req) => {
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
 
     const body = await req.json().catch(() => ({}));
-    const mode = body.mode || "auto"; // "auto" (rotating) or "manual"
+    const mode = body.mode || "auto";
     const manualParams = body.params || {};
-    const candidateCap = body.candidate_cap || 150;
     const overrideMaNe = body.override_ma_ne || false;
+
+    // ─── Load discovery settings ───
+    const { data: settingsRows } = await supabase.from("discovery_settings").select("key, value");
+    const settings: Record<string, any> = {};
+    for (const row of settingsRows || []) settings[row.key] = row.value;
+
+    const blacklistDomains: string[] = settings.blacklist_domains || [];
+    const blacklistNames: string[] = settings.blacklist_names || [];
+    const toggles = settings.toggles || { allow_edu: true, allow_gov: false, allow_hospital_systems: false, allow_university_research: false };
+    const sweepSize = typeof settings.sweep_size === "number" ? settings.sweep_size : (typeof settings.sweep_size === "string" ? parseInt(settings.sweep_size) : 300);
+    const candidateCap = body.candidate_cap || sweepSize;
 
     // Load signal keywords from DB
     const { data: kwRows } = await supabase.from("signal_keywords").select("category, keywords");
@@ -302,7 +409,6 @@ Deno.serve(async (req) => {
       const industries = manualParams.industries || ["company"];
       const triggers = manualParams.triggers || [];
       const geoStates = manualParams.geography || ["MA"];
-      // If custom states provided, build geo terms from them
       if (geoStates.length > 0 && !(geoStates.length === 1 && geoStates[0] === "MA")) {
         geoTerms = geoStates.map((s: string) => s);
       }
@@ -312,10 +418,9 @@ Deno.serve(async (req) => {
         triggers,
         geoTerms,
         subSectors: manualParams.sub_sectors || industries,
-        maxQueries: Math.min(Math.ceil(resultCount / 3), 15),
+        maxQueries: Math.min(Math.ceil(resultCount / 3), 20),
       });
     } else {
-      // Auto: rotating theme by day-of-week
       const dayOfWeek = new Date().getDay();
       const theme = DAY_THEMES[dayOfWeek] || DAY_THEMES[1];
       console.log(`Auto-discovery: ${theme.label} (day ${dayOfWeek})`);
@@ -323,13 +428,15 @@ Deno.serve(async (req) => {
         industries: theme.industries,
         subSectors: theme.subSectors,
         geoTerms,
-        maxQueries: 10,
+        maxQueries: 12,
       });
     }
 
     // ─── Firecrawl Search for net-new domains ───
     const candidateDomains: Map<string, { url: string; title: string; description: string }> = new Map();
-    let searchErrors: string[] = [];
+    const searchErrors: string[] = [];
+    let rejectedCarrier = 0, rejectedHospital = 0, rejectedUniversityLab = 0;
+    let rejectedPdf = 0, rejectedGeneric = 0, rejectedUnknownHq = 0;
 
     if (firecrawlKey) {
       for (const query of queries) {
@@ -338,17 +445,15 @@ Deno.serve(async (req) => {
           const searchResp = await fetch("https://api.firecrawl.dev/v1/search", {
             method: "POST",
             headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ query, limit: 5 }),
+            body: JSON.stringify({ query, limit: 8 }),
           });
           if (searchResp.ok) {
             const searchData = await searchResp.json();
             for (const result of searchData.data || []) {
               const domain = extractDomain(result.url);
               if (!domain) continue;
-              // Skip already-known domains
               if (existingDomains.has(domain)) continue;
-              // Skip common non-company domains
-              if (/linkedin\.com|facebook\.com|twitter\.com|instagram\.com|youtube\.com|wikipedia\.org|yelp\.com|glassdoor\.com|indeed\.com|crunchbase\.com|bloomberg\.com|bbb\.org/.test(domain)) continue;
+              if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain)) continue;
               if (!candidateDomains.has(domain)) {
                 candidateDomains.set(domain, { url: result.url, title: result.title || "", description: result.description || "" });
               }
@@ -361,20 +466,18 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      // No Firecrawl key: fall back to enriching existing accounts only
       console.log("No FIRECRAWL_API_KEY — enriching existing accounts only");
     }
 
     console.log(`Found ${candidateDomains.size} candidate domains from ${queries.length} queries`);
 
-    // ─── Scrape + HQ extract + create accounts ───
+    // ─── Scrape + HQ extract + ICP classify + create accounts ───
     let candidatesCreated = 0;
     let candidatesUpdated = 0;
     let hqMA = 0;
     let hqNE = 0;
     let discardedNonNE = 0;
-    let discardedUnknownHQ = 0;
-    let scrapeErrors: string[] = [];
+    const scrapeErrors: string[] = [];
     const keptCandidates: any[] = [];
 
     for (const [domain, info] of candidateDomains) {
@@ -396,12 +499,28 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // Infer company name
+      const companyName = info.title
+        ? info.title.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome)$/i, "").trim()
+        : domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+
+      // ─── ICP Classification ───
+      const icpClass = classifyIcp(companyName, domain, markdown, blacklistDomains, blacklistNames, toggles);
+      if (icpClass !== "employer") {
+        if (icpClass === "excluded_carrier") rejectedCarrier++;
+        else if (icpClass === "excluded_hospital") rejectedHospital++;
+        else if (icpClass === "excluded_university_lab") rejectedUniversityLab++;
+        else if (icpClass === "excluded_pdf") rejectedPdf++;
+        else rejectedGeneric++;
+        continue;
+      }
+
       // Extract HQ
       const hq = extractHqState(markdown);
 
       // HQ gating
       if (!hq.state || !hq.country) {
-        discardedUnknownHQ++;
+        rejectedUnknownHq++;
         continue;
       }
       if (hq.country !== "US") {
@@ -422,17 +541,11 @@ Deno.serve(async (req) => {
       const signals = detectSignalsFromContent(markdown, carrierNames, carrierPhrases, hrKeywords);
       const { highIntent, reasons: intentReasons } = isHighIntent(signals);
 
-      // Infer company name from title or domain
-      const companyName = info.title
-        ? info.title.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome)$/i, "").trim()
-        : domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
-
       const canonical = canonicalize(companyName);
 
       // Check canonical name dedup
       const existingId = existingCanonicals.get(canonical);
       if (existingId) {
-        // Update existing account with new signals if any
         if (Object.keys(signals).length > 0) {
           await supabase.from("accounts").update({
             triggers: signals,
@@ -440,6 +553,9 @@ Deno.serve(async (req) => {
             hq_state: hq.state,
             hq_city: hq.city,
             hq_country: hq.country || "US",
+            icp_class: "employer",
+            high_intent: highIntent,
+            high_intent_reason: intentReasons.join(",") || null,
           } as any).eq("id", existingId);
           candidatesUpdated++;
         }
@@ -461,6 +577,9 @@ Deno.serve(async (req) => {
         disposition: "active",
         d365_status: "unknown",
         needs_review: false,
+        icp_class: "employer",
+        high_intent: highIntent,
+        high_intent_reason: intentReasons.join(",") || null,
       } as any).select("id, name, domain, hq_state, geography_bucket").single();
 
       if (insertErr) {
@@ -481,6 +600,7 @@ Deno.serve(async (req) => {
         high_intent: highIntent,
         intent_reasons: intentReasons,
         top_signal: Object.keys(signals)[0] || null,
+        icp_class: "employer",
       });
     }
 
@@ -488,6 +608,7 @@ Deno.serve(async (req) => {
     const { data: unenrichedAccounts } = await supabase.from("accounts")
       .select("*")
       .or("hq_state.is.null,triggers.eq.{}")
+      .eq("icp_class", "employer")
       .limit(50);
 
     for (const account of unenrichedAccounts || []) {
@@ -522,7 +643,12 @@ Deno.serve(async (req) => {
         const existingTriggers = (account.triggers && typeof account.triggers === "object" && !Array.isArray(account.triggers)) ? account.triggers : {};
         if (Object.keys(existingTriggers).length === 0) {
           const signals = detectSignalsFromContent(markdown, carrierNames, carrierPhrases, hrKeywords);
-          if (Object.keys(signals).length > 0) updates.triggers = signals;
+          if (Object.keys(signals).length > 0) {
+            updates.triggers = signals;
+            const { highIntent, reasons } = isHighIntent(signals);
+            updates.high_intent = highIntent;
+            updates.high_intent_reason = reasons.join(",") || null;
+          }
         }
         if (Object.keys(updates).length > 0) {
           await supabase.from("accounts").update(updates).eq("id", account.id);
@@ -544,7 +670,12 @@ Deno.serve(async (req) => {
       hq_MA: hqMA,
       hq_NE: hqNE,
       discarded_non_NE: discardedNonNE,
-      discarded_unknown_HQ: discardedUnknownHQ,
+      rejected_carrier: rejectedCarrier,
+      rejected_hospital: rejectedHospital,
+      rejected_university_lab: rejectedUniversityLab,
+      rejected_pdf: rejectedPdf,
+      rejected_generic: rejectedGeneric,
+      rejected_unknown_hq: rejectedUnknownHq,
       kept_candidates: keptCandidates.length,
       errors: [...searchErrors, ...scrapeErrors].slice(0, 10),
     };
