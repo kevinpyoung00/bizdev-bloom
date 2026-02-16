@@ -480,182 +480,138 @@ Deno.serve(async (req) => {
     const scrapeErrors: string[] = [];
     const keptCandidates: any[] = [];
 
-    for (const [domain, info] of candidateDomains) {
-      if (keptCandidates.length >= candidateCap) break;
+    // Parallel scraping with concurrency limit
+    const CONCURRENCY = 5;
+    const SCRAPE_TIMEOUT_MS = 8000;
+    const domainEntries = Array.from(candidateDomains.entries()).slice(0, candidateCap);
 
+    async function scrapeDomain(domain: string, info: { url: string; title: string; description: string }) {
       let markdown = "";
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
         const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ url: `https://${domain}`, formats: ["markdown"], onlyMainContent: true }),
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
         if (scrapeResp.ok) {
           const scrapeData = await scrapeResp.json();
           markdown = scrapeData.data?.markdown || scrapeData.markdown || "";
         }
       } catch (e) {
-        scrapeErrors.push(`${domain}: scrape failed - ${e.message}`);
-        continue;
+        scrapeErrors.push(`${domain}: ${e.message?.includes("abort") ? "timeout" : e.message}`);
+        return null;
       }
 
-      // Infer company name
       const companyName = info.title
         ? info.title.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome)$/i, "").trim()
         : domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
 
-      // ─── ICP Classification ───
       const icpClass = classifyIcp(companyName, domain, markdown, blacklistDomains, blacklistNames, toggles);
-      if (icpClass !== "employer") {
-        if (icpClass === "excluded_carrier") rejectedCarrier++;
-        else if (icpClass === "excluded_hospital") rejectedHospital++;
-        else if (icpClass === "excluded_university_lab") rejectedUniversityLab++;
-        else if (icpClass === "excluded_pdf") rejectedPdf++;
-        else rejectedGeneric++;
-        continue;
-      }
+      if (icpClass !== "employer") return { rejected: icpClass };
 
-      // Extract HQ
       const hq = extractHqState(markdown);
-
-      // HQ gating
-      if (!hq.state || !hq.country) {
-        rejectedUnknownHq++;
-        continue;
-      }
-      if (hq.country !== "US") {
-        discardedNonNE++;
-        continue;
-      }
+      if (!hq.state || !hq.country) return { rejected: "unknown_hq" };
+      if (hq.country !== "US") return { rejected: "non_ne" };
 
       const bucket = getGeoBucket(hq.state);
-      if (!overrideMaNe && bucket === "US") {
-        discardedNonNE++;
-        continue;
-      }
+      if (!overrideMaNe && bucket === "US") return { rejected: "non_ne" };
 
-      if (bucket === "MA") hqMA++;
-      else if (bucket === "NE") hqNE++;
-
-      // Detect signals
       const signals = detectSignalsFromContent(markdown, carrierNames, carrierPhrases, hrKeywords);
       const { highIntent, reasons: intentReasons } = isHighIntent(signals);
-
       const canonical = canonicalize(companyName);
 
-      // Check canonical name dedup
-      const existingId = existingCanonicals.get(canonical);
-      if (existingId) {
-        if (Object.keys(signals).length > 0) {
-          await supabase.from("accounts").update({
-            triggers: signals,
-            geography_bucket: bucket,
-            hq_state: hq.state,
-            hq_city: hq.city,
-            hq_country: hq.country || "US",
-            icp_class: "employer",
-            high_intent: highIntent,
-            high_intent_reason: intentReasons.join(",") || null,
-          } as any).eq("id", existingId);
-          candidatesUpdated++;
-        }
-        continue;
-      }
-
-      // Create new account
-      const { data: newAccount, error: insertErr } = await supabase.from("accounts").insert({
-        name: companyName,
-        domain,
-        canonical_company_name: canonical,
-        website: `https://${domain}`,
-        hq_city: hq.city,
-        hq_state: hq.state,
-        hq_country: hq.country || "US",
-        geography_bucket: bucket,
-        triggers: Object.keys(signals).length > 0 ? signals : {},
-        source: "auto_discovery_rotating_v1",
-        disposition: "active",
-        d365_status: "unknown",
-        needs_review: false,
-        icp_class: "employer",
-        high_intent: highIntent,
-        high_intent_reason: intentReasons.join(",") || null,
-      } as any).select("id, name, domain, hq_state, geography_bucket").single();
-
-      if (insertErr) {
-        scrapeErrors.push(`${domain}: insert failed - ${insertErr.message}`);
-        continue;
-      }
-
-      candidatesCreated++;
-      existingDomains.add(domain);
-      existingCanonicals.set(canonical, newAccount.id);
-
-      keptCandidates.push({
-        id: newAccount.id,
-        name: companyName,
-        domain,
-        hq_state: hq.state,
-        geography_bucket: bucket,
-        high_intent: highIntent,
-        intent_reasons: intentReasons,
-        top_signal: Object.keys(signals)[0] || null,
-        icp_class: "employer",
-      });
+      return { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical };
     }
 
-    // ─── Also enrich existing accounts missing HQ/triggers ───
-    const { data: unenrichedAccounts } = await supabase.from("accounts")
-      .select("*")
-      .or("hq_state.is.null,triggers.eq.{}")
-      .eq("icp_class", "employer")
-      .limit(50);
+    // Process in batches of CONCURRENCY
+    for (let i = 0; i < domainEntries.length; i += CONCURRENCY) {
+      const batch = domainEntries.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(([domain, info]) => scrapeDomain(domain, info))
+      );
 
-    for (const account of unenrichedAccounts || []) {
-      const website = account.website || account.domain;
-      if (!website || !firecrawlKey) continue;
+      for (const result of results) {
+        if (result.status === "rejected" || !result.value) continue;
+        const val = result.value;
 
-      try {
-        let formattedUrl = website.trim();
-        if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
-          formattedUrl = `https://${formattedUrl}`;
+        if ("rejected" in val) {
+          const reason = val.rejected as string;
+          if (reason === "excluded_carrier") rejectedCarrier++;
+          else if (reason === "excluded_hospital") rejectedHospital++;
+          else if (reason === "excluded_university_lab") rejectedUniversityLab++;
+          else if (reason === "excluded_pdf") rejectedPdf++;
+          else if (reason === "unknown_hq") rejectedUnknownHq++;
+          else if (reason === "non_ne") discardedNonNE++;
+          else rejectedGeneric++;
+          continue;
         }
-        const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ url: formattedUrl, formats: ["markdown"], onlyMainContent: true }),
-        });
-        if (!scrapeResp.ok) continue;
-        const scrapeData = await scrapeResp.json();
-        const markdown = scrapeData.data?.markdown || scrapeData.markdown || "";
-        if (!markdown) continue;
 
-        const updates: Record<string, any> = {};
-        if (!account.hq_state) {
-          const hq = extractHqState(markdown);
-          if (hq.state) {
-            updates.hq_state = hq.state;
-            if (hq.city) updates.hq_city = hq.city;
-            if (hq.country) updates.hq_country = hq.country;
-            updates.geography_bucket = getGeoBucket(hq.state);
-          }
-        }
-        const existingTriggers = (account.triggers && typeof account.triggers === "object" && !Array.isArray(account.triggers)) ? account.triggers : {};
-        if (Object.keys(existingTriggers).length === 0) {
-          const signals = detectSignalsFromContent(markdown, carrierNames, carrierPhrases, hrKeywords);
+        const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical } = val;
+        if (bucket === "MA") hqMA++;
+        else if (bucket === "NE") hqNE++;
+
+        // Check canonical name dedup
+        const existingId = existingCanonicals.get(canonical);
+        if (existingId) {
           if (Object.keys(signals).length > 0) {
-            updates.triggers = signals;
-            const { highIntent, reasons } = isHighIntent(signals);
-            updates.high_intent = highIntent;
-            updates.high_intent_reason = reasons.join(",") || null;
+            await supabase.from("accounts").update({
+              triggers: signals,
+              geography_bucket: bucket,
+              hq_state: hq.state,
+              hq_city: hq.city,
+              hq_country: hq.country || "US",
+              icp_class: "employer",
+              high_intent: highIntent,
+              high_intent_reason: intentReasons.join(",") || null,
+            } as any).eq("id", existingId);
+            candidatesUpdated++;
           }
+          continue;
         }
-        if (Object.keys(updates).length > 0) {
-          await supabase.from("accounts").update(updates).eq("id", account.id);
-          candidatesUpdated++;
+
+        const { data: newAccount, error: insertErr } = await supabase.from("accounts").insert({
+          name: companyName,
+          domain,
+          canonical_company_name: canonical,
+          website: `https://${domain}`,
+          hq_city: hq.city,
+          hq_state: hq.state,
+          hq_country: hq.country || "US",
+          geography_bucket: bucket,
+          triggers: Object.keys(signals).length > 0 ? signals : {},
+          source: "auto_discovery_rotating_v1",
+          disposition: "active",
+          d365_status: "unknown",
+          needs_review: false,
+          icp_class: "employer",
+          high_intent: highIntent,
+          high_intent_reason: intentReasons.join(",") || null,
+        } as any).select("id, name, domain, hq_state, geography_bucket").single();
+
+        if (insertErr) {
+          scrapeErrors.push(`${domain}: insert failed - ${insertErr.message}`);
+          continue;
         }
-      } catch (e) {
-        scrapeErrors.push(`${account.name}: enrich failed - ${e.message}`);
+
+        candidatesCreated++;
+        existingDomains.add(domain);
+        existingCanonicals.set(canonical, newAccount.id);
+
+        keptCandidates.push({
+          id: newAccount.id,
+          name: companyName,
+          domain,
+          hq_state: hq.state,
+          geography_bucket: bucket,
+          high_intent: highIntent,
+          intent_reasons: intentReasons,
+          top_signal: Object.keys(signals)[0] || null,
+          icp_class: "employer",
+        });
       }
     }
 
