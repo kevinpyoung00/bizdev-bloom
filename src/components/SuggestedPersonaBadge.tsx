@@ -9,13 +9,14 @@ interface Props {
   signals?: any;
   companyName?: string;
   zywaveId?: string | null;
+  hqState?: string | null;
   /** compact = inline chips for table rows; full = labeled block */
   variant?: 'compact' | 'full';
 }
 
 function buildSalesNavUrl(companyName: string, titles: string[]): string {
-  const joined = titles.map(t => `"${t}"`).join(' OR ');
-  return `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent('company:' + companyName + ' title:(' + joined + ')')}`;
+  const keywords = companyName + ' ' + titles.join(' ');
+  return `https://www.linkedin.com/sales/search/people?keywords=${encodeURIComponent(keywords)}`;
 }
 
 function buildZywaveSearchUrl(companyName: string, state?: string | null): string {
@@ -23,42 +24,44 @@ function buildZywaveSearchUrl(companyName: string, state?: string | null): strin
   return `https://app.zywave.com/search?query=${encodeURIComponent(q)}`;
 }
 
-function QuickSearchLinks({ rec, companyName, zywaveId }: { rec: PersonaRecommendation; companyName: string; zywaveId?: string | null }) {
-  const primaryTitles = [rec.primary];
+function QuickSearchLinks({ rec, companyName, zywaveId, hqState }: { rec: PersonaRecommendation; companyName: string; zywaveId?: string | null; hqState?: string | null }) {
+  const primarySalesNav = buildSalesNavUrl(companyName, [rec.primary]);
   const backupTitles = rec.alternates.slice(0, 2);
-  const primarySalesNav = buildSalesNavUrl(companyName, primaryTitles);
   const backupSalesNav = backupTitles.length > 0 ? buildSalesNavUrl(companyName, backupTitles) : null;
   const zywaveHref = zywaveId
-    ? `https://app.zywave.com/company/${zywaveId}`
-    : buildZywaveSearchUrl(companyName);
+    ? `https://app.zywave.com/search?query=${encodeURIComponent(zywaveId)}`
+    : buildZywaveSearchUrl(companyName, hqState);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] text-muted-foreground font-medium">Quick Search:</span>
-      <div className="flex items-center gap-1.5 flex-wrap">
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] font-semibold text-foreground">{rec.primary}</span>
         <a href={primarySalesNav} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
           <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
-            <Search size={10} /> SalesNav — {rec.primary}
-          </Button>
-        </a>
-        {backupSalesNav && (
-          <a href={backupSalesNav} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-            <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
-              <Search size={10} /> SalesNav — {backupTitles[0]}
-            </Button>
-          </a>
-        )}
-        <a href={zywaveHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-          <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
-            <ExternalLink size={10} /> {zywaveId ? 'Open Zywave' : 'Search Zywave'}
+            <Search size={10} /> Open SalesNav — {rec.primary}
           </Button>
         </a>
       </div>
+      {backupTitles.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">{backupTitles[0]}</span>
+          <a href={backupSalesNav!} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+            <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
+              <Search size={10} /> Open SalesNav — {backupTitles[0]}
+            </Button>
+          </a>
+        </div>
+      )}
+      <a href={zywaveHref} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+        <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1">
+          <ExternalLink size={10} /> {zywaveId ? 'Open Zywave' : 'Search Zywave'}
+        </Button>
+      </a>
     </div>
   );
 }
 
-export default function SuggestedPersonaBadge({ employeeCount, industryKey, signals, companyName, zywaveId, variant = 'compact' }: Props) {
+export default function SuggestedPersonaBadge({ employeeCount, industryKey, signals, companyName, zywaveId, hqState, variant = 'compact' }: Props) {
   const rec = recommendPersona(employeeCount, industryKey, signals);
 
   if (variant === 'compact') {
@@ -84,17 +87,7 @@ export default function SuggestedPersonaBadge({ employeeCount, industryKey, sign
         <Target size={12} className="text-primary" />
         <span className="text-xs font-semibold text-foreground">Suggested Persona</span>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        <Badge variant="default" className="text-[10px]">{rec.primary}</Badge>
-        {rec.alternates.map((alt) => (
-          <Badge key={alt} variant="outline" className="text-[10px]">{alt}</Badge>
-        ))}
-      </div>
-      <div>
-        <span className="text-[10px] text-muted-foreground font-medium">Recommended Titles: </span>
-        <span className="text-[10px] text-foreground">{rec.recommendedTitles.join(', ')}</span>
-      </div>
-      {companyName && <QuickSearchLinks rec={rec} companyName={companyName} zywaveId={zywaveId} />}
+      {companyName && <QuickSearchLinks rec={rec} companyName={companyName} zywaveId={zywaveId} hqState={hqState} />}
     </div>
   );
 }
