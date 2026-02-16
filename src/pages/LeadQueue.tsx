@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useLeadQueue, useRunScoring, type QueueScope } from '@/hooks/useLeadEngine';
 import { useClaimLead, useRejectLead, useMarkUploaded, useRejectedLeads, useRestoreLead, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,7 +20,8 @@ import AccountDrawer from '@/components/lead-engine/AccountDrawer';
 import { DualStarsBadge, StarsLegend } from '@/components/lead-engine/DualStarsBadge';
 import LeadStatusBadge from '@/components/lead-engine/LeadStatusBadge';
 import D365StatusBadge from '@/components/lead-engine/D365StatusBadge';
-import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
+import SignalChips, { buildChipsFromTriggers, buildPillsFromLeadSignals } from '@/components/crm/SignalChips';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import IndustryChip from '@/components/lead-engine/IndustryChip';
 import { exportD365CheckCSV, ImportD365Results } from '@/components/lead-engine/D365ExportImport';
@@ -28,6 +29,26 @@ import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
 import { recommendPersona } from '@/lib/personaRecommend';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
+
+// ── Signal Pills Row with tooltips ──
+function SignalPillsRow({ leadSignals, triggers }: { leadSignals: any; triggers: any }) {
+  const pills = buildPillsFromLeadSignals(leadSignals, triggers);
+  if (pills.length === 0) return <span className="text-xs text-muted-foreground italic">No signals</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {pills.map((pill, i) => (
+        <Tooltip key={i}>
+          <TooltipTrigger asChild>
+            <Badge variant={pill.variant} className="text-[10px] px-1.5 py-0 gap-0.5 font-medium rounded-[5px] h-5 cursor-default">
+              {pill.icon} {pill.label}
+            </Badge>
+          </TooltipTrigger>
+          {pill.tooltip && <TooltipContent className="text-xs max-w-[220px]">{pill.tooltip}</TooltipContent>}
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
 
 // ── localStorage helpers ──
 const STORAGE_KEY = 'lead-queue-filters';
@@ -369,9 +390,9 @@ export default function LeadQueue() {
                             <TableCell className="font-medium text-foreground">{lead.priority_rank}</TableCell>
                             <TableCell><DualStarsBadge lead={lead} /></TableCell>
                             <TableCell>
-                              <div>
+                              <div className="flex flex-col gap-0.5">
                                 <span className="font-medium text-foreground">{lead.account.name}</span>
-                                <Button size="sm" className="h-5 mt-0.5 px-2 text-[10px] bg-blue-600 hover:bg-blue-700 text-white rounded" onClick={(e) => { e.stopPropagation(); handleView(lead); }}>
+                                <Button size="sm" className="h-7 mt-1 px-3 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-md w-fit" onClick={(e) => { e.stopPropagation(); handleView(lead); }}>
                                   Details
                                 </Button>
                               </div>
@@ -379,7 +400,9 @@ export default function LeadQueue() {
                             <TableCell><IndustryChip industry={lead.account.industry} /></TableCell>
                             <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
                             <TableCell><Badge variant="outline" className="text-[10px]">{lead.account.geography_bucket}</Badge></TableCell>
-                            <TableCell className="max-w-[220px]"><SignalChips chips={buildChipsFromTriggers(lead.reason?.lead_signals || lead.account.triggers)} /></TableCell>
+                            <TableCell className="max-w-[260px]">
+                              <SignalPillsRow leadSignals={lead.reason?.lead_signals} triggers={lead.account.triggers} />
+                            </TableCell>
                             <TableCell>
                               <SuggestedPersonaBadge
                                 employeeCount={lead.account.employee_count}

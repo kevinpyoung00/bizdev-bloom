@@ -322,36 +322,112 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
 // ─── Selection with geography gates ───
 // NE and National now require ★★★ signal stars instead of numeric score thresholds
 
+// ─── High-Intent check for NE companies ───
+
+const NE_STATES = ["CT", "RI", "NH", "ME", "VT"];
+
+function isHighIntent(triggers: any): boolean {
+  if (!triggers) return false;
+
+  // Funding ≤120 days
+  const funding = triggers.funding ?? triggers.expansion ?? triggers.funding_expansion;
+  if (funding) {
+    if (typeof funding === "object") {
+      const days = (funding.months_ago ?? 12) * 30;
+      if (days <= 120) return true;
+    } else if (funding === true) return true;
+  }
+
+  // HR Leader change ≤60 days
+  const rc = triggers.recent_role_changes ?? triggers.non_csuite_role_changes;
+  if (rc) {
+    const items = Array.isArray(rc) ? rc : [rc];
+    for (const item of items) {
+      const combined = `${(item.title || "").toLowerCase()} ${(item.department || "").toLowerCase()}`;
+      if (HR_KEYWORDS.some((kw) => combined.includes(kw)) && (item.days_ago ?? 999) <= 60) return true;
+    }
+  }
+
+  // Carrier change ≤120 days
+  if (triggers.carrier_change?.recent) return true;
+
+  // Hiring velocity ≥8 in 60 days
+  const openRoles = triggers.open_roles_60d ?? triggers.hiring_velocity ?? 0;
+  if (openRoles >= 8) return true;
+
+  // C-suite change ≤60 days
+  const cs = triggers.c_suite_changes ?? triggers.leadership_changes;
+  if (cs) {
+    const mo = cs.months_ago ?? cs.recency_months ?? null;
+    if (mo !== null && mo * 30 <= 60) return true;
+    if (mo === null && (cs === true || (typeof cs === "object" && Object.keys(cs).length > 0))) return true;
+  }
+
+  // News/PR ≤60 days
+  const news = triggers.news ?? triggers.press ?? triggers.media;
+  if (news) {
+    const daysAgo = typeof news === "object" ? (news.days_ago ?? 999) : 999;
+    if (daysAgo <= 60) return true;
+    if (news?.keywords?.length > 0) return true;
+  }
+
+  return false;
+}
+
 function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
   const eligible = scored.filter((a) => a.disposition === "active" || a.disposition === "needs_review");
 
   const sorted = [...eligible].sort((a, b) => {
-    // Sort by signal stars first, then reach stars
     if (b.signal_stars !== a.signal_stars) return b.signal_stars - a.signal_stars;
     if (b.reach_stars !== a.reach_stars) return b.reach_stars - a.reach_stars;
-    // Tie-breakers: employee count proximity to 150 → domain
     const aDist = Math.abs((a.employee_count ?? 0) - 150);
     const bDist = Math.abs((b.employee_count ?? 0) - 150);
     if (aDist !== bDist) return aDist - bDist;
     return (a.domain ?? "").localeCompare(b.domain ?? "");
   });
 
-  const maPool = sorted.filter((a) => a.geography_bucket === "MA");
-  const nePool = sorted.filter((a) => a.geography_bucket === "NE" && a.signal_stars === 3);
-  const usPool = sorted.filter((a) => a.geography_bucket === "US" && a.signal_stars === 3);
+  // Only MA and NE high-intent are eligible — exclude all others
+  const maPool = sorted.filter((a) => {
+    const s = normalizeState(a.hq_state);
+    return s === "MA" || s === "MASSACHUSETTS";
+  });
+
+  const nePool = sorted.filter((a) => {
+    const s = normalizeState(a.hq_state);
+    return NE_STATES.includes(s) && isHighIntent(a.triggers);
+  });
 
   const selected: ScoredAccount[] = [];
   const usedIds = new Set<string>();
 
-  for (const a of maPool) { if (selected.length >= 45) break; selected.push(a); usedIds.add(a.id); }
-  let neCount = 0;
-  for (const a of nePool) { if (neCount >= 4) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); neCount++; }
-  let usCount = 0;
-  for (const a of usPool) { if (usCount >= 1) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); usCount++; }
-  if (selected.length < 50) { for (const a of maPool) { if (selected.length >= 50) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); } }
-  if (selected.length < 50) { for (const a of sorted) { if (selected.length >= 50) break; if (usedIds.has(a.id)) continue; selected.push(a); usedIds.add(a.id); } }
+  // 45 MA slots
+  for (const a of maPool) {
+    if (selected.length >= 45) break;
+    selected.push(a);
+    usedIds.add(a.id);
+  }
 
-  return selected.slice(0, 50);
+  // Up to 5 NE high-intent slots (do NOT backfill from non-NE)
+  let neCount = 0;
+  for (const a of nePool) {
+    if (neCount >= 5) break;
+    if (usedIds.has(a.id)) continue;
+    selected.push(a);
+    usedIds.add(a.id);
+    neCount++;
+  }
+
+  // If fewer than 45 MA, backfill remaining MA slots only
+  if (selected.length < 50) {
+    for (const a of maPool) {
+      if (selected.length >= 50) break;
+      if (usedIds.has(a.id)) continue;
+      selected.push(a);
+      usedIds.add(a.id);
+    }
+  }
+
+  return selected;
 }
 
 // ─── Main handler ───
