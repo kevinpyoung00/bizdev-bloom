@@ -49,16 +49,16 @@ function detectSource(filename: string): string {
 }
 
 const HEADER_MAP: Record<string, RegExp> = {
-  first_name: /first.?name|fname/i,
-  last_name: /last.?name|lname|surname/i,
-  title: /title|job.?title|position/i,
+  first_name: /first.?name|fname|^first$/i,
+  last_name: /last.?name|lname|surname|^last$/i,
+  title: /title|job.?title|position|^role$/i,
   email: /email|e-?mail/i,
-  phone: /phone|mobile|direct.?phone/i,
-  linkedin_url: /linkedin|li.?url|li.?profile/i,
-  company_name: /company|org|account/i,
-  company_domain: /\b(domain|website|company.?url|web)\b/i,
+  phone: /phone|mobile|direct.?phone|work.?phone/i,
+  linkedin_url: /linkedin|li.?url|li.?profile|person.?linkedin|contact.?linkedin|profile.?url/i,
+  company_name: /company|org|account|company.?name/i,
+  company_domain: /\b(domain|website|company.?url|web|company.?website)\b/i,
   industry: /industry|sector/i,
-  employee_count: /employee|emp.?count|size|headcount/i,
+  employee_count: /employee|emp.?count|size|headcount|number.?of.?emp/i,
   hq_city: /city|hq.?city/i,
   hq_state: /state|hq.?state|region/i,
 };
@@ -407,6 +407,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                     <TableHead className="text-xs">Title</TableHead>
                     <TableHead className="text-xs">Email</TableHead>
                     <TableHead className="text-xs">Phone</TableHead>
+                    <TableHead className="text-xs">LinkedIn</TableHead>
                     <TableHead className="text-xs">Sources</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -418,6 +419,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                       <TableCell className="text-xs">{m.title || '—'}</TableCell>
                       <TableCell className="text-xs">{m.email || '—'}</TableCell>
                       <TableCell className="text-xs">{m.phone || '—'}</TableCell>
+                      <TableCell className="text-xs">{m.linkedin_url ? '✓' : '—'}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {m._sources.map(s => <Badge key={s} variant="outline" className="text-[9px]">{s}</Badge>)}
