@@ -14,19 +14,18 @@ export function exportD365CheckCSV(leads: LeadWithAccount[]) {
   if (leads.length === 0) { toast.info('No leads to export'); return; }
 
   const rows = leads.map(l => ({
-    company: l.account.name,
-    canonical_company_name: (l.account as any).canonical_company_name || '',
-    domain: l.account.domain || '',
-    hq_city: l.account.hq_city || '',
-    hq_state: l.account.hq_state || '',
-    industry: l.account.industry || '',
-    employee_count: l.account.employee_count || '',
+    'Account Name': l.account.name,
+    'Website': l.account.website || l.account.domain ? `https://${l.account.domain}` : '',
+    'Address 1: City': l.account.hq_city || '',
+    'Address 1: State/Province': l.account.hq_state || '',
+    'Industry': l.account.industry || '',
+    'Number of Employees': l.account.employee_count || '',
   }));
 
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'D365 Check');
-  XLSX.writeFile(wb, `d365-check-${new Date().toISOString().split('T')[0]}.csv`, { bookType: 'csv' });
+  XLSX.utils.book_append_sheet(wb, ws, 'Accounts');
+  XLSX.writeFile(wb, `d365-check-${new Date().toISOString().split('T')[0]}.xlsx`, { bookType: 'xlsx' });
   toast.success(`Exported ${rows.length} companies for D365 check`);
 
   supabase.from('audit_log').insert({
