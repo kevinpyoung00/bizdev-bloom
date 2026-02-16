@@ -335,9 +335,7 @@ export default function LeadQueue() {
                 <span className="text-xs text-muted-foreground mr-1">Scope:</span>
                 <Button size="sm" variant={scope === 'today' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('today')}>Today</Button>
                 <Button size="sm" variant={scope === '7d' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('7d')}>Last 7 days</Button>
-                {debugMode && (
-                  <Button size="sm" variant={scope === 'all' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('all')}>All (debug)</Button>
-                )}
+                <Button size="sm" variant={scope === 'all' ? 'default' : 'outline'} className="h-7 text-xs px-3" onClick={() => setScope('all')}>All</Button>
               </div>
               <div className="flex items-center gap-2">
                 <Switch checked={hideOwned} onCheckedChange={setHideOwned} id="hide-owned" />
