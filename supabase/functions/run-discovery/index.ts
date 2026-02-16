@@ -713,7 +713,7 @@ Deno.serve(async (req) => {
       const { highIntent, reasons: intentReasons } = isHighIntent(signals);
       const canonical = canonicalize(companyName);
 
-      return { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical };
+      return { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical, markdown };
     }
 
     // Process in batches of CONCURRENCY
@@ -740,7 +740,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-      const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical } = val;
+      const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical, markdown: scrapedMarkdown } = val;
         if (bucket === "MA") hqMA++;
         else if (bucket === "NE") hqNE++;
 
@@ -798,7 +798,7 @@ Deno.serve(async (req) => {
         existingTitles.add(normTitle);
 
         // Classify subtype for logging
-        const subtype = classifySubtype(companyName, domain, markdown || "");
+        const subtype = classifySubtype(companyName, domain, scrapedMarkdown || "");
         keptBySubtype[subtype] = (keptBySubtype[subtype] || 0) + 1;
 
         keptCandidates.push({
