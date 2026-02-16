@@ -1,5 +1,4 @@
 // ── Rotating Discovery Theme Configuration ──
-// Each day-of-week maps to a theme with sub-sectors, trigger keywords, and query templates.
 
 export type DayTheme = {
   key: string;
@@ -18,6 +17,7 @@ export const DAY_THEMES: Record<number, DayTheme> = {
       'gene therapy', 'CRO', 'contract research', 'diagnostics', 'clinical trials',
       'drug discovery', 'biologics', 'mRNA', 'cell therapy', 'precision medicine',
       'bioinformatics', 'proteomics', 'immunotherapy', 'biosimilars', 'reagents',
+      'independent lab',
     ],
   },
   2: {
@@ -28,6 +28,7 @@ export const DAY_THEMES: Record<number, DayTheme> = {
       'cybersecurity', 'fintech', 'edtech', 'healthtech', 'proptech', 'martech',
       'cloud infrastructure', 'AI platform', 'data analytics', 'DevOps',
       'enterprise software', 'B2B SaaS', 'IoT platform', 'robotics software',
+      'cannabis tech',
     ],
   },
   3: {
@@ -38,26 +39,29 @@ export const DAY_THEMES: Record<number, DayTheme> = {
       'medtech engineering', 'CNC machining', 'injection molding', 'electronics manufacturing',
       'defense contractor', 'aerospace parts', 'semiconductor equipment', 'clean energy manufacturing',
       'industrial automation', '3D printing', 'additive manufacturing', 'quality systems',
+      'cannabis packaging', 'cannabis equipment',
     ],
   },
   4: {
     key: 'healthcare_social_assistance',
     label: 'Healthcare / Clinics / Providers',
-    industries: ['healthcare', 'clinics', 'medical providers', 'behavioral health'],
+    industries: ['healthcare', 'clinics', 'medical providers', 'behavioral health', 'community health center'],
     subSectors: [
       'urgent care', 'dental group', 'physical therapy', 'home health',
       'mental health', 'substance abuse treatment', 'hospice', 'primary care network',
-      'community health center', 'surgical center', 'radiology group', 'telehealth',
+      'community health center', 'FQHC', 'surgical center', 'radiology group', 'telehealth',
+      'senior care', 'assisted living',
     ],
   },
   5: {
     key: 'professional_services',
-    label: 'Professional Services / Agencies / Financial Services',
-    industries: ['professional services', 'consulting', 'financial services', 'insurance brokerage'],
+    label: 'Professional Services / Financial Services',
+    industries: ['professional services', 'consulting', 'financial services', 'insurance brokerage', 'bank', 'credit union'],
     subSectors: [
       'accounting firm', 'law firm', 'staffing agency', 'marketing agency',
       'wealth management', 'private equity', 'venture capital', 'architecture firm',
       'engineering consulting', 'IT consulting', 'management consulting', 'real estate',
+      'credit union', 'community bank', 'regional bank',
     ],
   },
   6: {
@@ -67,6 +71,7 @@ export const DAY_THEMES: Record<number, DayTheme> = {
     subSectors: [
       'rapid growth', 'scaling company', 'talent acquisition', 'mass hiring',
       'workforce expansion', 'new office', 'high growth startup',
+      'cannabis dispensary hiring', 'nonprofit careers', 'school district employment', 'municipal jobs',
     ],
   },
   0: {
@@ -145,9 +150,16 @@ export const PANEL_INDUSTRIES = [
   { key: 'med_devices', label: 'Medical Devices' },
   { key: 'professional_services', label: 'Professional Services / Agencies' },
   { key: 'financial_services', label: 'Financial Services' },
+  { key: 'cannabis', label: 'Cannabis' },
+  { key: 'banks_credit_unions', label: 'Banks / Credit Unions' },
   { key: 'construction', label: 'Construction / Trades' },
   { key: 'hospitality', label: 'Hospitality' },
-  { key: 'education', label: 'Education' },
+  { key: 'logistics', label: 'Logistics' },
+  { key: 'retail', label: 'Retail' },
+  { key: 'education', label: 'Education (K-12 & Small Colleges)' },
+  { key: 'nonprofit', label: 'Nonprofit / Human Services' },
+  { key: 'municipal', label: 'Municipal / Town' },
+  { key: 'senior_care', label: 'Senior Care / Assisted Living' },
   { key: 'govt_nonprofit', label: 'Government / Nonprofit' },
 ];
 
@@ -192,7 +204,7 @@ export const DISCOVERY_TYPES = [
   { key: 'fast', label: 'Fast sweep (lighter)' },
 ];
 
-export const RESULT_COUNTS = [10, 20, 50, 100];
+export const RESULT_COUNTS = [10, 20, 50, 100, 300];
 
 // Helper to pick N random items from an array
 export function pickRandom<T>(arr: T[], n: number): T[] {

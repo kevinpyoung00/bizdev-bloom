@@ -14,6 +14,7 @@ export interface PreviewCandidate {
   high_intent: boolean;
   intent_reasons: string[];
   top_signal: string | null;
+  icp_class?: string;
 }
 
 interface Props {

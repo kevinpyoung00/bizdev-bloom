@@ -67,9 +67,12 @@ export type Database = {
           domain: string | null
           employee_count: number | null
           geography_bucket: string | null
+          high_intent: boolean | null
+          high_intent_reason: string | null
           hq_city: string | null
           hq_country: string | null
           hq_state: string | null
+          icp_class: string | null
           icp_score: number | null
           id: string
           industry: string | null
@@ -99,9 +102,12 @@ export type Database = {
           domain?: string | null
           employee_count?: number | null
           geography_bucket?: string | null
+          high_intent?: boolean | null
+          high_intent_reason?: string | null
           hq_city?: string | null
           hq_country?: string | null
           hq_state?: string | null
+          icp_class?: string | null
           icp_score?: number | null
           id?: string
           industry?: string | null
@@ -131,9 +137,12 @@ export type Database = {
           domain?: string | null
           employee_count?: number | null
           geography_bucket?: string | null
+          high_intent?: boolean | null
+          high_intent_reason?: string | null
           hq_city?: string | null
           hq_country?: string | null
           hq_state?: string | null
+          icp_class?: string | null
           icp_score?: number | null
           id?: string
           industry?: string | null
@@ -378,6 +387,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      discovery_settings: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
       }
       email_drafts: {
         Row: {
