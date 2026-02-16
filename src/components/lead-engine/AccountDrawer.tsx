@@ -10,7 +10,7 @@ import { useClaimLead, useRejectLead, useStartCampaign, REJECT_REASONS } from '@
 import { useGenerateDrip } from '@/hooks/useGenerateDrip';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
-import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play, Pencil, Save } from 'lucide-react';
+import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play, Pencil, Save, AlertTriangle } from 'lucide-react';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import D365StatusBadge from '@/components/lead-engine/D365StatusBadge';
 import { toast } from 'sonner';
@@ -46,9 +46,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const [showDrip, setShowDrip] = useState(false);
   const [generatingChannel, setGeneratingChannel] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState<string | null>(null);
-  const [editingD365, setEditingD365] = useState(false);
   const [editingZywave, setEditingZywave] = useState(false);
-  const [d365Draft, setD365Draft] = useState('');
   const [zywaveDraft, setZywaveDraft] = useState('');
 
   if (!lead) return null;
@@ -77,6 +75,17 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
   const hasEmail = (rawReason.contact_email ?? 0) > 0 || contacts.some((c: any) => c.email);
   const hasPhone = (rawReason.contact_phone ?? 0) > 0 || contacts.some((c: any) => c.phone);
   const hasLinkedIn = (rawReason.contact_linkedin ?? 0) > 0 || contacts.some((c: any) => c.linkedin_url);
+
+  // D365 status helpers
+  const d365Status = (account as any).d365_status || 'unknown';
+  const d365OwnerName = (account as any).d365_owner_name;
+  const showD365Section = d365Status === 'owned' && d365OwnerName;
+
+  // Zywave helpers
+  const zywaveId = (account as any).zywave_id;
+  const zywaveHref = zywaveId
+    ? `https://app.zywave.com/company/${zywaveId}`
+    : `https://app.zywave.com/search?query=${encodeURIComponent((account.name || '') + ' ' + (account.hq_state || ''))}`;
 
   // Build lead data for drip generation
   const buildLeadData = () => {
@@ -146,7 +155,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
   return (
     <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setBriefMarkdown(null); setShowDrip(false); setPersonaOverride(null); } }}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto" onCloseAutoFocus={() => { setBriefMarkdown(null); setShowDrip(false); setPersonaOverride(null); setEditingD365(false); setEditingZywave(false); }}>
+      <SheetContent className="w-full sm:max-w-lg overflow-y-auto" onCloseAutoFocus={() => { setBriefMarkdown(null); setShowDrip(false); setPersonaOverride(null); setEditingZywave(false); }}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{account.name}</span>
@@ -205,34 +214,28 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             </div>
           </div>
 
-          {/* D365 Ownership — editable */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">D365:</span>
-            {editingD365 ? (
-              <div className="flex items-center gap-1">
-                <Input className="h-7 w-40 text-xs" placeholder="Owner name or blank" value={d365Draft} onChange={e => setD365Draft(e.target.value)} />
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
-                  updateAccountField.mutate({ accountId: account.id, field: 'd365_owner_name', value: d365Draft.trim() || null });
-                  setEditingD365(false);
-                  toast.success('D365 owner updated');
-                }}><Save size={12} /></Button>
-              </div>
-            ) : (
-              <>
-                <D365StatusBadge status={(account as any).d365_status} ownerName={(account as any).d365_owner_name} d365AccountId={(account as any).d365_account_id} />
-                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setD365Draft((account as any).d365_owner_name || ''); setEditingD365(true); }}>
-                  <Pencil size={11} />
-                </Button>
-              </>
-            )}
-          </div>
+          {/* D365 Ownership — only show if owned with owner name */}
+          {showD365Section && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">D365:</span>
+              <D365StatusBadge status={d365Status} ownerName={d365OwnerName} d365AccountId={(account as any).d365_account_id} />
+            </div>
+          )}
 
-          {/* Zywave ID — editable */}
+          {/* D365 status chip (always visible, subtle) */}
+          {!showD365Section && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">D365:</span>
+              <D365StatusBadge status={d365Status} ownerName={null} d365AccountId={null} />
+            </div>
+          )}
+
+          {/* Zywave — editable */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-muted-foreground">Zywave:</span>
             {editingZywave ? (
               <div className="flex items-center gap-1">
-                <Input className="h-7 w-40 text-xs" placeholder="Zywave ID" value={zywaveDraft} onChange={e => setZywaveDraft(e.target.value)} />
+                <Input className="h-7 w-48 text-xs" placeholder="Zywave ID or URL" value={zywaveDraft} onChange={e => setZywaveDraft(e.target.value)} />
                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
                   updateAccountField.mutate({ accountId: account.id, field: 'zywave_id', value: zywaveDraft.trim() || null });
                   setEditingZywave(false);
@@ -241,22 +244,24 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               </div>
             ) : (
               <>
-                <Badge variant="outline" className="text-xs">{(account as any).zywave_id || '—'}</Badge>
-                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setZywaveDraft((account as any).zywave_id || ''); setEditingZywave(true); }}>
+                <a href={zywaveHref} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                  <ExternalLink size={12} /> {zywaveId ? 'Open Zywave' : 'Search Zywave'}
+                </a>
+                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setZywaveDraft(zywaveId || ''); setEditingZywave(true); }}>
                   <Pencil size={11} />
                 </Button>
               </>
             )}
           </div>
 
-          {/* Suggested Persona To Look Up on LinkedIn */}
+          {/* Suggested Persona */}
           <div className="border border-border rounded-lg p-3">
             <SuggestedPersonaBadge
               employeeCount={account.employee_count}
               industryKey={industryKey}
               signals={rawReason}
               companyName={account.name}
-              zywaveId={(account as any).zywave_id}
+              zywaveId={zywaveId}
               variant="full"
             />
           </div>
@@ -297,7 +302,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
               <div><span className="text-muted-foreground">Geography:</span> <Badge variant="outline" className="text-xs">{account.geography_bucket}</Badge></div>
               {account.website && (
                 <div>
-                  <a href={account.website.startsWith('http') ? account.website : `https://${account.website}`} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
+                  <a href={account.website.startsWith('http') ? account.website : `https://${account.website}`} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
                     <ExternalLink size={12} /> Website
                   </a>
                 </div>
@@ -324,9 +329,9 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     </div>
                     <p className="text-xs text-muted-foreground">{c.title || '—'}</p>
                     <div className="flex gap-3 mt-2">
-                      {c.email && <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline"><Mail size={12} /> {c.email}</a>}
+                      {c.email && <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}><Mail size={12} /> {c.email}</a>}
                       {c.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {c.phone}</span>}
-                      {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline"><Linkedin size={12} /> LinkedIn</a>}
+                      {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}><Linkedin size={12} /> LinkedIn</a>}
                     </div>
                   </div>
                 ))}
@@ -336,18 +341,24 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
 
           <Separator />
 
-          {/* Actions */}
+          {/* Actions — Bottom action bar */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Actions</h3>
             <div className="flex flex-wrap gap-2">
               {claimStatus === 'new' && (
                 <>
-                  <Button size="sm" onClick={handleClaim} disabled={claimLead.isPending}>
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={handleClaim} disabled={claimLead.isPending}>
                     {claimLead.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
                     Claim
                   </Button>
+                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white" onClick={async () => {
+                    await (await import('@/integrations/supabase/client')).supabase.from('accounts').update({ needs_review: true } as any).eq('id', account.id);
+                    toast.success('Sent to Needs Review');
+                  }}>
+                    <AlertTriangle size={14} className="mr-1" /> Review
+                  </Button>
                   {rejectReason === null ? (
-                    <Button size="sm" variant="destructive" onClick={() => setRejectReason('')}>Reject</Button>
+                    <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => setRejectReason('')}>Reject</Button>
                   ) : (
                     <Select onValueChange={handleReject}>
                       <SelectTrigger className="h-8 w-48 text-xs">
@@ -365,26 +376,26 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                   <Play size={14} className="mr-1" /> Start Campaign
                 </Button>
               )}
-              <Button size="sm" variant="outline" onClick={async () => {
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={async () => {
                 try {
                   const result = await generateBrief.mutateAsync(account.id);
                   setBriefMarkdown(result.brief);
-                  toast.success('Brief generated!');
+                  toast.success('Analysis generated!');
                 } catch (e: any) { toast.error(e.message); }
               }} disabled={generateBrief.isPending}>
                 {generateBrief.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />}
-                Brief
+                Analysis
               </Button>
             </div>
           </div>
 
-          {/* Brief */}
+          {/* Brief / Analysis */}
           {briefMarkdown && (
             <>
               <Separator />
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-foreground">Generated Brief</h3>
+                  <h3 className="text-sm font-semibold text-foreground">Generated Analysis</h3>
                   <Button size="sm" variant="ghost" className="h-7" onClick={() => copyText(briefMarkdown, 'brief')}>
                     {copiedField === 'brief' ? <Check size={14} className="text-primary" /> : <Copy size={14} />}
                   </Button>

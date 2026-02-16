@@ -153,6 +153,58 @@ export function useStartCampaign() {
   });
 }
 
+export function useRejectedLeads() {
+  return useQuery({
+    queryKey: ['lead-queue-rejected'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('lead_queue')
+        .select('*, accounts(*)')
+        .eq('claim_status', 'rejected')
+        .order('updated_at', { ascending: false });
+      if (error) throw error;
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        priority_rank: row.priority_rank,
+        score: row.score,
+        reason: row.reason,
+        status: row.status,
+        run_date: row.run_date,
+        claim_status: row.claim_status,
+        claimed_at: row.claimed_at,
+        persona: row.persona,
+        industry_key: row.industry_key,
+        reject_reason: row.reject_reason,
+        updated_at: row.updated_at,
+        account: row.accounts,
+      }));
+    },
+  });
+}
+
+export function useRestoreLead() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (leadId: string) => {
+      const { error } = await supabase
+        .from('lead_queue')
+        .update({ claim_status: 'new', status: 'pending', reject_reason: null } as any)
+        .eq('id', leadId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
+      toast({ title: 'Lead restored to queue' });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Restore failed', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
 export function useIndustrySettings() {
   return useQuery({
     queryKey: ['industry-settings'],
