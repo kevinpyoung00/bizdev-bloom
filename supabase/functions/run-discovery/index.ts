@@ -225,17 +225,77 @@ function isNewsDomain(domain: string): boolean {
 
 function extractEmployerName(markdown: string, fallbackTitle: string, domain: string): string | null {
   if (!markdown) return null;
+
+  // 1. Schema.org Organization name (highest confidence)
   const orgMatch = markdown.match(/"@type"\s*:\s*"Organization"[^}]*"name"\s*:\s*"([^"]+)"/);
   if (orgMatch) return orgMatch[1].trim();
   const orgMatch2 = markdown.match(/"name"\s*:\s*"([^"]+)"[^}]*"@type"\s*:\s*"Organization"/);
   if (orgMatch2) return orgMatch2[1].trim();
+
+  // 2. og:site_name (high confidence — set by site owner)
   const ogMatch = markdown.match(/og:site_name[^"]*"([^"]+)"/i);
   if (ogMatch) return ogMatch[1].trim();
-  if (fallbackTitle) {
-    const cleaned = fallbackTitle.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome|Careers|Jobs|About|Contact)$/i, "").trim();
-    if (cleaned.length > 2 && cleaned.length < 80) return cleaned;
+
+  // 3. Page <title> from the SCRAPED markdown (not the search result title)
+  //    Markdown from Firecrawl often starts with "# Title" as the first heading
+  const h1Match = markdown.match(/^#\s+(.{3,80})$/m);
+  if (h1Match) {
+    const h1Cleaned = cleanPageTitle(h1Match[1]);
+    if (h1Cleaned && !isGeoOrGenericTitle(h1Cleaned, domain)) return h1Cleaned;
   }
+
+  // 4. og:title from scraped page
+  const ogTitleMatch = markdown.match(/og:title[^"]*"([^"]+)"/i);
+  if (ogTitleMatch) {
+    const ogCleaned = cleanPageTitle(ogTitleMatch[1]);
+    if (ogCleaned && !isGeoOrGenericTitle(ogCleaned, domain)) return ogCleaned;
+  }
+
+  // 5. Fallback: search result title (LOWEST confidence — often contains geo terms)
+  if (fallbackTitle) {
+    const cleaned = cleanPageTitle(fallbackTitle);
+    if (cleaned && !isGeoOrGenericTitle(cleaned, domain)) return cleaned;
+  }
+
+  // 6. Last resort: derive from domain name
+  const domainName = domain.replace(/\.(com|io|org|net|co|us|biz|info)$/i, "").replace(/[.-]/g, " ").trim();
+  if (domainName.length > 2) {
+    return domainName.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  }
+
   return null;
+}
+
+/** Clean a page title by stripping suffixes, separators, and generic words */
+function cleanPageTitle(title: string): string | null {
+  const cleaned = title
+    .split(/[|–—\-:·»]/)[0]
+    .trim()
+    .replace(/\s*(Home|Homepage|Official\s*Site|Welcome\s*(to)?|Careers|Jobs|About(\s+Us)?|Contact(\s+Us)?)\s*$/i, "")
+    .trim();
+  return (cleaned.length > 2 && cleaned.length < 80) ? cleaned : null;
+}
+
+/** Detect if a title is just a geo term or generic phrase, not a company name */
+function isGeoOrGenericTitle(title: string, domain: string): boolean {
+  const lower = title.toLowerCase().trim();
+  // Reject if it's just a US state name or abbreviation
+  if (STATE_CODES.has(lower.toUpperCase())) return true;
+  if (STATE_ABBREVS[lower]) return true;
+  // Reject if it matches "City ST" pattern (e.g., "Burlington MA")
+  if (/^[a-z\s]+,?\s*[a-z]{2}$/i.test(lower)) return true;
+  // Reject common geo-only patterns
+  if (/^(town|city|village|borough)\s+of\s+/i.test(lower)) return true;
+  // Reject if title is a single common geo term from query templates
+  const geoNames = ["boston", "cambridge", "worcester", "waltham", "lowell", "andover", "springfield",
+    "framingham", "quincy", "newton", "somerville", "brockton", "needham", "burlington",
+    "lexington", "bedford", "hartford", "new haven", "stamford", "providence",
+    "portland", "manchester", "nashua", "massachusetts", "new england"];
+  if (geoNames.includes(lower)) return true;
+  // Reject if very short and doesn't resemble the domain
+  const domainBase = domain.replace(/\.(com|io|org|net|co|us)$/i, "").replace(/[.-]/g, "").toLowerCase();
+  if (lower.length <= 4 && !domainBase.includes(lower.replace(/\s/g, ""))) return true;
+  return false;
 }
 
 function verifyEmployerEntity(markdown: string): boolean {
