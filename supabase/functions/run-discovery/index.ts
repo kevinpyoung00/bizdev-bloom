@@ -42,7 +42,6 @@ const STATE_CODES = new Set(Object.values(STATE_ABBREVS));
 function extractHqState(markdown: string): { city: string | null; state: string | null; country: string | null } {
   if (!markdown) return { city: null, state: null, country: null };
 
-  // Schema.org PostalAddress
   const schemaMatch = markdown.match(/"addressRegion"\s*:\s*"([^"]+)"/);
   if (schemaMatch) {
     const region = schemaMatch[1].trim().toUpperCase();
@@ -55,7 +54,6 @@ function extractHqState(markdown: string): { city: string | null; state: string 
     }
   }
 
-  // "City, ST" pattern
   const abbrPattern = /([A-Z][a-zA-Z\s]{1,30}),\s*([A-Z]{2})\b/g;
   let match;
   while ((match = abbrPattern.exec(markdown)) !== null) {
@@ -64,7 +62,6 @@ function extractHqState(markdown: string): { city: string | null; state: string 
     }
   }
 
-  // Full state name
   const lower = markdown.toLowerCase();
   for (const [fullName, code] of Object.entries(STATE_ABBREVS)) {
     const idx = lower.indexOf(fullName);
@@ -161,7 +158,7 @@ const PDF_PATTERNS = /\.(pdf|doc|docx|pptx?)$/i;
 const SPAM_DOMAIN_PATTERNS = /\b(yelp\.com|glassdoor\.com|indeed\.com|crunchbase\.com|bloomberg\.com|bbb\.org|yellowpages|manta\.com|buzzfile|dnb\.com|zoominfo\.com|apollo\.io)\b/i;
 const SOCIAL_DOMAINS = /\b(linkedin\.com|facebook\.com|twitter\.com|instagram\.com|youtube\.com|wikipedia\.org|tiktok\.com|reddit\.com)\b/i;
 
-// ─── NEW: News/media domain list (signal-only, never create as employers) ───
+// ─── News/media domain list (signal-only, never create as employers) ───
 const NEWS_MEDIA_DOMAINS = new Set([
   "bizjournals.com", "bostonglobe.com", "boston.com", "wbur.org", "wcvb.com",
   "masslive.com", "bostonherald.com", "statnews.com", "fiercebiotech.com",
@@ -177,16 +174,15 @@ const NEWS_MEDIA_DOMAINS = new Set([
   "patriotledger.com", "enterprisenews.com", "metrowestdailynews.com",
 ]);
 
-// ─── NEW: Ecosystem/association/accelerator patterns (signal-only) ───
-const ECOSYSTEM_PATTERNS = /\b(massbio|mass\s*life\s*sciences|mlsc|mass\s*tech\s*collaborative|cambridge\s*innovation\s*center|cic|techstars|masschallenge|greentown\s*labs|incubator|accelerator|trade\s*association|industry\s*association|economic\s*development|chamber\s*of\s*commerce)\b/i;
+// ─── Ecosystem/association/accelerator/VC patterns (signal-only) ───
+const ECOSYSTEM_PATTERNS = /\b(massbio|mass\s*life\s*sciences|mlsc|mass\s*tech\s*collaborative|cambridge\s*innovation\s*center|cic|techstars|masschallenge|greentown\s*labs|incubator|accelerator|trade\s*association|industry\s*association|economic\s*development|chamber\s*of\s*commerce|massventures|mass\s*biomedical\s*initiatives|mbi|venture\s*capital|venture\s*fund|angel\s*fund|angel\s*investor|private\s*equity\s*firm|vc\s*fund|seed\s*fund|investment\s*fund|capital\s*partners|growth\s*equity|job\s*board|career\s*portal|staffing\s*portal)\b/i;
 
-// ─── NEW: Generic non-employer page patterns ───
+// ─── Generic non-employer page patterns ───
 const GENERIC_PAGE_PATTERNS = /\b(greetings|boston\s+is\s+the\s+largest|top\s+\d+\s+(companies|employers|startups)|best\s+places\s+to\s+work|listicle|ranking|directory|award\s+winners)\b/i;
 
-// ─── NEW: Path-only rejection patterns (these paths are articles/resources, not company homepages) ───
+// ─── Path-only rejection patterns ───
 const ARTICLE_PATH_PATTERNS = /\/(news|press|blog|article|story|post|publications?|resources|reports?|policies|policy|events?|webinar|podcast|newsletter|insights?|media|releases?|announcements?|awards?|rankings?)\b/i;
 
-// ─── NEW: Check if URL is a root-domain page (path is / or empty) ───
 function isRootDomainUrl(url: string): boolean {
   try {
     const u = new URL(url.startsWith("http") ? url : `https://${url}`);
@@ -196,23 +192,18 @@ function isRootDomainUrl(url: string): boolean {
   }
 }
 
-// ─── NEW: Check if URL path suggests non-employer content ───
 function isArticleOrResourcePath(url: string): boolean {
   try {
     const u = new URL(url.startsWith("http") ? url : `https://${url}`);
-    // Paths with more than 2 segments are likely articles
     const segments = u.pathname.split("/").filter(Boolean);
     if (segments.length > 2) return true;
-    // Known article/resource path patterns
     if (ARTICLE_PATH_PATTERNS.test(u.pathname)) return true;
-    // Careers/jobs paths are OK — we'll resolve to root domain
     return false;
   } catch {
     return false;
   }
 }
 
-// ─── NEW: Check if URL is a careers/jobs path that should resolve to root ───
 const CAREERS_PATH_PATTERNS = /\/(careers|jobs|employment|join-us|join|work-with-us|openings|hiring|positions|opportunities|team|about|contact|who-we-are)\b/i;
 
 function isCareerOrAboutPath(url: string): boolean {
@@ -224,7 +215,6 @@ function isCareerOrAboutPath(url: string): boolean {
   }
 }
 
-// ─── NEW: Is news/media domain ───
 function isNewsDomain(domain: string): boolean {
   const d = domain.toLowerCase();
   for (const nd of NEWS_MEDIA_DOMAINS) {
@@ -233,19 +223,14 @@ function isNewsDomain(domain: string): boolean {
   return false;
 }
 
-// ─── NEW: Extract employer name from scraped markdown ───
 function extractEmployerName(markdown: string, fallbackTitle: string, domain: string): string | null {
   if (!markdown) return null;
-  // Try schema.org Organization name
   const orgMatch = markdown.match(/"@type"\s*:\s*"Organization"[^}]*"name"\s*:\s*"([^"]+)"/);
   if (orgMatch) return orgMatch[1].trim();
-  // Try reverse order
   const orgMatch2 = markdown.match(/"name"\s*:\s*"([^"]+)"[^}]*"@type"\s*:\s*"Organization"/);
   if (orgMatch2) return orgMatch2[1].trim();
-  // Try og:site_name
   const ogMatch = markdown.match(/og:site_name[^"]*"([^"]+)"/i);
   if (ogMatch) return ogMatch[1].trim();
-  // Use title but clean it
   if (fallbackTitle) {
     const cleaned = fallbackTitle.split(/[|–—\-:]/)[0].trim().replace(/\s*(Home|Homepage|Official Site|Welcome|Careers|Jobs|About|Contact)$/i, "").trim();
     if (cleaned.length > 2 && cleaned.length < 80) return cleaned;
@@ -253,34 +238,28 @@ function extractEmployerName(markdown: string, fallbackTitle: string, domain: st
   return null;
 }
 
-// ─── NEW: Verify employer entity on root domain markdown ───
 function verifyEmployerEntity(markdown: string): boolean {
   if (!markdown || markdown.length < 100) return false;
-  // Must have some employer indicators
   const hasOrgSchema = /"@type"\s*:\s*"Organization"/i.test(markdown);
   const hasCompanyName = /\b(inc|llc|co\b|corp|ltd|company|group)\b/i.test(markdown);
   const hasAbout = /\b(about\s+us|our\s+(company|team|mission|story))\b/i.test(markdown);
   const hasContact = /\b(contact\s+us|headquarters|office|address)\b/i.test(markdown);
   const hasCareers = /\b(careers|jobs|open\s+positions|join\s+(our|the)\s+team)\b/i.test(markdown);
   const hasProducts = /\b(products|services|solutions|our\s+work|what\s+we\s+do)\b/i.test(markdown);
-  // Need at least 2 employer indicators
   const score = [hasOrgSchema, hasCompanyName, hasAbout, hasContact, hasCareers, hasProducts].filter(Boolean).length;
   return score >= 2;
 }
 
-// ─── NEW: Classify ecosystem/association orgs ───
 function isEcosystemOrg(name: string, domain: string, markdown: string): boolean {
   if (ECOSYSTEM_PATTERNS.test(name)) return true;
   if (ECOSYSTEM_PATTERNS.test(domain)) return true;
   if (markdown && ECOSYSTEM_PATTERNS.test(markdown.slice(0, 3000))) {
-    // Additional check: does the page self-describe as an association/ecosystem?
     const lower = markdown.slice(0, 3000).toLowerCase();
     if (/\b(member\s*organizations?|our\s*members|member\s*companies|industry\s*group|advocacy)\b/i.test(lower)) return true;
   }
   return false;
 }
 
-// ─── NEW: Check generic/listicle page ───
 function isGenericPage(markdown: string): boolean {
   if (!markdown) return true;
   if (markdown.length < 200) return true;
@@ -299,38 +278,103 @@ function classifyIcp(
   const lowerName = name.toLowerCase();
   const lowerDomain = domain.toLowerCase();
 
-  // Blacklist check
   if (blacklistDomains.some(d => lowerDomain.includes(d.toLowerCase()))) return "excluded_carrier";
   if (blacklistNames.some(n => lowerName.includes(n.toLowerCase()))) return "excluded_carrier";
-
-  // Carrier check
   if (CARRIER_PATTERNS.test(name) || CARRIER_PATTERNS.test(markdown.slice(0, 2000))) return "excluded_carrier";
-
-  // Hospital system check
   if (!toggles.allow_hospital_systems && (HOSPITAL_PATTERNS.test(name) || HOSPITAL_PATTERNS.test(markdown.slice(0, 2000)))) return "excluded_hospital";
-
-  // University lab/center/department check
   if (!toggles.allow_university_research && UNIVERSITY_LAB_PATTERNS.test(name)) return "excluded_university_lab";
-
-  // Ecosystem/association/accelerator — signal-only, not employers
   if (isEcosystemOrg(name, domain, markdown)) return "excluded_ecosystem";
-
-  // .edu domain handling
   if (lowerDomain.endsWith(".edu") && !toggles.allow_edu) return "excluded_university_lab";
-
-  // .gov domain handling
   if (lowerDomain.endsWith(".gov") && !toggles.allow_gov) return "excluded_generic";
-
-  // PDF/non-HTML
   if (PDF_PATTERNS.test(domain)) return "excluded_pdf";
-
-  // Social/directory/spam
   if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain)) return "excluded_generic";
-
-  // Generic page without employer entity
   if (isGenericPage(markdown) && !verifyEmployerEntity(markdown)) return "excluded_generic";
 
   return "employer";
+}
+
+// ─── Industry inference from page content ───
+// Tight synonym sets for each industry key
+const INDUSTRY_INFERENCE_MAP: Record<string, RegExp> = {
+  "biotech_life_sciences": /\b(biotech|life\s*science|pharma|biolog|genomic|gene\s*therapy|cro\b|clinical\s*trial|drug\s*discovery|biologics|mrna|cell\s*therapy|precision\s*medicine|bioinformatics|proteomics|immunotherapy|biosimilar|reagent|diagnostics)\b/i,
+  "tech_pst": /\b(saas|software|tech\s*company|information\s*technology|cybersecurity|fintech|edtech|healthtech|proptech|martech|cloud|ai\s*platform|data\s*analytics|devops|enterprise\s*software|iot|robotics\s*software)\b/i,
+  "advanced_mfg_med_devices": /\b(manufactur|medical\s*device|medtech|precision\s*engineer|cnc|injection\s*mold|defense\s*contractor|aerospace|semiconductor|3d\s*print|additive\s*manufactur|industrial\s*automation)\b/i,
+  "healthcare_social_assistance": /\b(urgent\s*care|dental\s*group|physical\s*therapy|home\s*health|mental\s*health|substance\s*abuse|hospice|primary\s*care|community\s*health|fqhc|health\s*center|clinic|surgical\s*center|telehealth|senior\s*care|assisted\s*living|behavioral\s*health)\b/i,
+  "professional_services": /\b(accounting\s*firm|cpa\s*firm|law\s*firm|staffing\s*agency|marketing\s*agency|consulting|wealth\s*management|architecture\s*firm|engineering\s*consult|it\s*consult|management\s*consult|real\s*estate|professional\s*services)\b/i,
+  "banks_cu": /\b(credit\s*union|community\s*bank|regional\s*bank|savings\s*bank|trust\s*company|banking|financial\s*institution|bank\b)\b/i,
+  "cannabis": /\b(cannabis|marijuana|dispensar|cbd|hemp|cultivation|thc)\b/i,
+  "education": /\b(school\s*district|charter\s*school|k-12|private\s*school|community\s*college|academy|education|learning\s*center)\b/i,
+  "nonprofit": /\b(nonprofit|non-profit|501\s*c|ymca|boys\s*&?\s*girls|jcc|united\s*way|human\s*services|salvation\s*army|habitat|goodwill|foundation|charitable)\b/i,
+  "municipal": /\b(municipal|town\s*of|city\s*of|\.gov|public\s*works|selectmen|town\s*hall|city\s*hall|department\s*of\s*public)\b/i,
+  "logistics": /\b(logistics|freight|warehousing|supply\s*chain|trucking|shipping|transportation|3pl|last\s*mile)\b/i,
+  "retail": /\b(retail|store|shop|boutique|e-commerce|ecommerce|consumer\s*goods|merchandise)\b/i,
+  "hospitality": /\b(hotel|resort|restaurant|hospitality|catering|event\s*venue|inn\b|lodging)\b/i,
+  "higher_ed_nonprofit": /\b(university|college|higher\s*ed|academic|faculty|campus)\b/i,
+};
+
+// Map user-selected industry labels to inference keys
+const INDUSTRY_LABEL_TO_KEY: Record<string, string[]> = {
+  "biotech": ["biotech_life_sciences"],
+  "life sciences": ["biotech_life_sciences"],
+  "pharmaceuticals": ["biotech_life_sciences"],
+  "genomics": ["biotech_life_sciences"],
+  "technology": ["tech_pst"],
+  "saas": ["tech_pst"],
+  "software": ["tech_pst"],
+  "it services": ["tech_pst"],
+  "manufacturing": ["advanced_mfg_med_devices"],
+  "medical devices": ["advanced_mfg_med_devices"],
+  "precision engineering": ["advanced_mfg_med_devices"],
+  "healthcare": ["healthcare_social_assistance"],
+  "clinics": ["healthcare_social_assistance"],
+  "medical providers": ["healthcare_social_assistance"],
+  "behavioral health": ["healthcare_social_assistance"],
+  "community health center": ["healthcare_social_assistance"],
+  "professional services": ["professional_services"],
+  "consulting": ["professional_services"],
+  "financial services": ["professional_services", "banks_cu"],
+  "insurance brokerage": ["professional_services"],
+  "bank": ["banks_cu"],
+  "credit union": ["banks_cu"],
+  "cannabis": ["cannabis"],
+  "any": [], // wildcard
+};
+
+function inferIndustryKey(name: string, domain: string, markdown: string): string | null {
+  const text = (name + " " + domain + " " + (markdown || "").slice(0, 4000)).toLowerCase();
+  for (const [key, pattern] of Object.entries(INDUSTRY_INFERENCE_MAP)) {
+    if (pattern.test(text)) return key;
+  }
+  return null;
+}
+
+function resolveSelectedIndustryKeys(selectedIndustries: string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const sel of selectedIndustries) {
+    const lower = sel.toLowerCase();
+    // Direct key match
+    if (INDUSTRY_INFERENCE_MAP[lower]) { keys.add(lower); continue; }
+    // Label-to-key map
+    const mapped = INDUSTRY_LABEL_TO_KEY[lower];
+    if (mapped) { for (const k of mapped) keys.add(k); continue; }
+    // Fuzzy: check if any key contains the selected string
+    for (const key of Object.keys(INDUSTRY_INFERENCE_MAP)) {
+      if (key.includes(lower) || lower.includes(key.split("_")[0])) { keys.add(key); break; }
+    }
+  }
+  return keys;
+}
+
+// ─── Subtype classifier for kept employers ───
+function classifySubtype(name: string, domain: string, md: string): string {
+  const lower = (name + " " + domain + " " + md.slice(0, 2000)).toLowerCase();
+  if (/\b(bank|credit\s*union|savings\s*bank|trust\s*company)\b/.test(lower)) return "bank_cu";
+  if (/\b(cannabis|marijuana|dispensary|cbd|hemp|cultivation)\b/.test(lower)) return "cannabis";
+  if (/\b(ymca|boys\s*&?\s*girls|jcc|united\s*way|nonprofit|non-profit|501\s*c|human\s*services|salvation\s*army|habitat|goodwill)\b/.test(lower)) return "nonprofit";
+  if (/\b(municipal|town\s*of|city\s*of|\.gov)\b/.test(lower)) return "municipal";
+  if (/\b(school\s*district|charter\s*school|k-12|academy|community\s*college|private\s*school)\b/.test(lower)) return "school";
+  if (/\b(community\s*health|fqhc|health\s*center|clinic)\b/.test(lower)) return "clinic";
+  return "private";
 }
 
 // ─── Rotating themes ───
@@ -425,7 +469,6 @@ function pickRandom<T>(arr: T[], n: number): T[] {
   return shuffled.slice(0, Math.min(n, arr.length));
 }
 
-// ─── Build search queries ───
 function buildQueries(params: {
   industries?: string[];
   triggers?: string[];
@@ -465,7 +508,6 @@ function buildQueries(params: {
   return Array.from(queries);
 }
 
-// ─── Extract domain from URL ───
 function extractDomain(url: string): string | null {
   try {
     const u = new URL(url.startsWith("http") ? url : `https://${url}`);
@@ -475,7 +517,6 @@ function extractDomain(url: string): string | null {
   }
 }
 
-// ─── Canonicalize company name ───
 function canonicalize(name: string): string {
   return name
     .replace(/\b(inc|llc|co|corp|ltd|limited|corporation|company|group|holdings|plc|lp|llp|pllc|pc|pa|dba|enterprises)\b\.?/gi, "")
@@ -523,25 +564,48 @@ Deno.serve(async (req) => {
     const carrierPhrases = kwMap["carrier_change_phrases"] ?? [];
     const hrKeywords = kwMap["benefits_hr_keywords"] ?? [];
 
-    // Load existing account domains for dedup (domain + canonical + normalized title)
-    const { data: existingAccounts } = await supabase.from("accounts").select("id, domain, canonical_company_name, name");
+    // ─── 30-day repeat suppression: load recent domains/canonicals ───
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const { data: existingAccounts } = await supabase
+      .from("accounts")
+      .select("id, domain, canonical_company_name, name, created_at, triggers");
     const existingDomains = new Set<string>();
     const existingCanonicals = new Map<string, string>();
     const existingTitles = new Set<string>();
+    // Track recently created accounts for repeat suppression
+    const recentDomains = new Set<string>();
+    const recentCanonicals = new Set<string>();
+
     for (const a of existingAccounts || []) {
       if (a.domain) existingDomains.add(a.domain.toLowerCase());
       if (a.canonical_company_name) existingCanonicals.set(a.canonical_company_name.toLowerCase(), a.id);
       if (a.name) existingTitles.add(normalizeTitle(a.name));
+      // Check if created within last 30 days (for repeat suppression)
+      if (a.created_at && new Date(a.created_at) >= thirtyDaysAgo) {
+        if (a.domain) recentDomains.add(a.domain.toLowerCase());
+        if (a.canonical_company_name) recentCanonicals.add(a.canonical_company_name.toLowerCase());
+      }
     }
 
-    // Normalize title for dedup: strip punctuation/stopwords, lowercase
     function normalizeTitle(t: string): string {
       return t.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\b(the|and|of|for|in|at|to|a|an|is|are|was|were|inc|llc|corp|ltd|co)\b/g, "").replace(/\s+/g, " ").trim();
+    }
+
+    // ─── Resolve selected industries for manual mode ───
+    let selectedIndustryKeys: Set<string> | null = null;
+    if (mode === "manual" && manualParams.industries && manualParams.industries.length > 0) {
+      const hasWildcard = manualParams.industries.some((i: string) => i.toLowerCase() === "any");
+      if (!hasWildcard) {
+        selectedIndustryKeys = resolveSelectedIndustryKeys(manualParams.industries);
+        console.log(`Manual mode: selected industry keys = ${Array.from(selectedIndustryKeys).join(", ")}`);
+      }
     }
 
     // ─── Build queries based on mode ───
     let queries: string[];
     let geoTerms = [...GEO_TERMS, ...pickRandom(NE_GEO_TERMS, 3)];
+    let themeLabel = "manual";
 
     if (mode === "manual") {
       const industries = manualParams.industries || ["company"];
@@ -561,6 +625,7 @@ Deno.serve(async (req) => {
     } else {
       const dayOfWeek = new Date().getDay();
       const theme = DAY_THEMES[dayOfWeek] || DAY_THEMES[1];
+      themeLabel = theme.label;
       console.log(`Auto-discovery: ${theme.label} (day ${dayOfWeek})`);
       queries = buildQueries({
         industries: theme.industries,
@@ -571,12 +636,13 @@ Deno.serve(async (req) => {
     }
 
     // ─── Firecrawl Search for net-new domains ───
-    // NEW: Track all rejection categories
     const candidateDomains: Map<string, { url: string; title: string; description: string }> = new Map();
     const searchErrors: string[] = [];
     let rejectedCarrier = 0, rejectedHospital = 0, rejectedUniversityLab = 0;
     let rejectedPdf = 0, rejectedGeneric = 0, rejectedUnknownHq = 0;
     let rejectedNewsDomain = 0, rejectedPathOnly = 0, rejectedEcosystem = 0;
+    let rejectedIndustryMismatch = 0;
+    let rejectedRepeat30d = 0;
 
     if (firecrawlKey) {
       for (const query of queries) {
@@ -594,35 +660,20 @@ Deno.serve(async (req) => {
               const domain = extractDomain(url);
               if (!domain) continue;
 
-              // ── GUARD A: Skip existing domains ──
               if (existingDomains.has(domain)) continue;
-
-              // ── GUARD B: Social/spam domains ──
               if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain)) continue;
 
-              // ── GUARD C: NEWS/MEDIA DOMAIN → signal-only, skip ──
-              if (isNewsDomain(domain)) {
-                rejectedNewsDomain++;
-                continue;
-              }
+              if (isNewsDomain(domain)) { rejectedNewsDomain++; continue; }
+              if (PDF_PATTERNS.test(url)) { rejectedPdf++; continue; }
 
-              // ── GUARD D: PDF / non-HTML file extension ──
-              if (PDF_PATTERNS.test(url)) {
-                rejectedPdf++;
-                continue;
-              }
-
-              // ── GUARD E: Article/resource path (not careers/about) ──
               if (!isRootDomainUrl(url) && isArticleOrResourcePath(url) && !isCareerOrAboutPath(url)) {
                 rejectedPathOnly++;
                 continue;
               }
 
-              // If URL is a careers/about path, resolve to root domain for scraping
-              // The domain is already extracted as root, so we scrape https://{domain}
               if (!candidateDomains.has(domain)) {
                 candidateDomains.set(domain, {
-                  url: `https://${domain}`,  // Always scrape root domain
+                  url: `https://${domain}`,
                   title: result.title || "",
                   description: result.description || "",
                 });
@@ -639,9 +690,9 @@ Deno.serve(async (req) => {
       console.log("No FIRECRAWL_API_KEY — enriching existing accounts only");
     }
 
-    console.log(`Found ${candidateDomains.size} candidate domains from ${queries.length} queries (rejected: news=${rejectedNewsDomain}, path=${rejectedPathOnly}, pdf=${rejectedPdf})`);
+    console.log(`Found ${candidateDomains.size} candidate domains from ${queries.length} queries`);
 
-    // ─── Scrape ROOT DOMAIN + HQ extract + ICP classify + create accounts ───
+    // ─── Scrape ROOT DOMAIN + HQ + ICP + industry match + create accounts ───
     let candidatesCreated = 0;
     let candidatesUpdated = 0;
     let hqMA = 0;
@@ -650,20 +701,8 @@ Deno.serve(async (req) => {
     const scrapeErrors: string[] = [];
     const keptCandidates: any[] = [];
     const keptBySubtype: Record<string, number> = {};
+    const keptByIndustry: Record<string, number> = {};
 
-    // ─── Subtype classifier for kept employers ───
-    function classifySubtype(name: string, domain: string, md: string): string {
-      const lower = (name + " " + domain + " " + md.slice(0, 2000)).toLowerCase();
-      if (/\b(bank|credit\s*union|savings\s*bank|trust\s*company)\b/.test(lower)) return "bank_cu";
-      if (/\b(cannabis|marijuana|dispensary|cbd|hemp|cultivation)\b/.test(lower)) return "cannabis";
-      if (/\b(ymca|boys\s*&?\s*girls|jcc|united\s*way|nonprofit|non-profit|501\s*c|human\s*services|salvation\s*army|habitat|goodwill)\b/.test(lower)) return "nonprofit";
-      if (/\b(municipal|town\s*of|city\s*of|\.gov)\b/.test(lower)) return "municipal";
-      if (/\b(school\s*district|charter\s*school|k-12|academy|community\s*college|private\s*school)\b/.test(lower)) return "school";
-      if (/\b(community\s*health|fqhc|health\s*center|clinic)\b/.test(lower)) return "clinic";
-      return "private";
-    }
-
-    // Parallel scraping with concurrency limit
     const CONCURRENCY = 5;
     const SCRAPE_TIMEOUT_MS = 8000;
     const domainEntries = Array.from(candidateDomains.entries()).slice(0, candidateCap);
@@ -673,7 +712,6 @@ Deno.serve(async (req) => {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
-        // ALWAYS scrape root domain
         const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
@@ -690,15 +728,11 @@ Deno.serve(async (req) => {
         return null;
       }
 
-      // ── GUARD: Verify employer entity on root domain ──
       const employerName = extractEmployerName(markdown, info.title, domain);
       if (!employerName) return { rejected: "excluded_generic" };
-
-      // ── GUARD: Generic/listicle/non-employer page ──
       if (!verifyEmployerEntity(markdown)) return { rejected: "excluded_generic" };
 
       const companyName = employerName;
-
       const icpClass = classifyIcp(companyName, domain, markdown, blacklistDomains, blacklistNames, toggles);
       if (icpClass !== "employer") return { rejected: icpClass };
 
@@ -713,7 +747,10 @@ Deno.serve(async (req) => {
       const { highIntent, reasons: intentReasons } = isHighIntent(signals);
       const canonical = canonicalize(companyName);
 
-      return { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical, markdown };
+      // Infer industry for filtering
+      const inferredIndustry = inferIndustryKey(companyName, domain, markdown);
+
+      return { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical, markdown, inferredIndustry };
     }
 
     // Process in batches of CONCURRENCY
@@ -740,16 +777,32 @@ Deno.serve(async (req) => {
           continue;
         }
 
-      const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical, markdown: scrapedMarkdown } = val;
+        const { companyName, domain, hq, bucket, signals, highIntent, intentReasons, canonical, markdown: scrapedMarkdown, inferredIndustry } = val;
+
+        // ── GUARD: Industry-must-match for manual runs ──
+        if (selectedIndustryKeys && selectedIndustryKeys.size > 0) {
+          if (!inferredIndustry || !selectedIndustryKeys.has(inferredIndustry)) {
+            rejectedIndustryMismatch++;
+            continue;
+          }
+        }
+
+        // ── GUARD: 30-day repeat suppression ──
+        // Only suppress if already in DB AND created <30d ago AND no new strong signals
+        if (recentDomains.has(domain.toLowerCase()) || recentCanonicals.has(canonical)) {
+          const hasNewStrongSignal = !!(signals.funding || signals.hr_change || signals.csuite_change || signals.carrier_change || (signals.open_roles_60d && signals.open_roles_60d >= 8));
+          if (!hasNewStrongSignal) {
+            rejectedRepeat30d++;
+            continue;
+          }
+        }
+
         if (bucket === "MA") hqMA++;
         else if (bucket === "NE") hqNE++;
 
-        // Stronger dedupe: domain → canonical_company_name → normalized title
+        // Stronger dedupe: domain → canonical → normalized title
         const normTitle = normalizeTitle(companyName);
-        if (existingTitles.has(normTitle)) {
-          // Already exists by title match, treat like canonical dedup
-          continue;
-        }
+        if (existingTitles.has(normTitle)) continue;
         const existingId = existingCanonicals.get(canonical);
         if (existingId) {
           if (Object.keys(signals).length > 0) {
@@ -785,6 +838,7 @@ Deno.serve(async (req) => {
           icp_class: "employer",
           high_intent: highIntent,
           high_intent_reason: intentReasons.join(",") || null,
+          industry: inferredIndustry || null,
         } as any).select("id, name, domain, hq_state, geography_bucket").single();
 
         if (insertErr) {
@@ -797,9 +851,11 @@ Deno.serve(async (req) => {
         existingCanonicals.set(canonical, newAccount.id);
         existingTitles.add(normTitle);
 
-        // Classify subtype for logging
         const subtype = classifySubtype(companyName, domain, scrapedMarkdown || "");
         keptBySubtype[subtype] = (keptBySubtype[subtype] || 0) + 1;
+        if (inferredIndustry) {
+          keptByIndustry[inferredIndustry] = (keptByIndustry[inferredIndustry] || 0) + 1;
+        }
 
         keptCandidates.push({
           id: newAccount.id,
@@ -811,26 +867,86 @@ Deno.serve(async (req) => {
           intent_reasons: intentReasons,
           top_signal: Object.keys(signals)[0] || null,
           icp_class: "employer",
+          entity_subtype: subtype,
+          inferred_industry: inferredIndustry,
         });
       }
     }
 
-    // ─── Diversity caps (before returning) ───
-    // Max 40% life sciences; ensure 10% min for services/municipal/banks/cannabis when available
+    // ─── Diversity caps enforcement ───
+    // Max 40% life sciences; ensure ≥10% for each selected industry (manual) or present category (auto)
     const LIFE_SCI_CAP = 0.4;
+    const MIN_CATEGORY_PCT = 0.1;
     const totalKept = keptCandidates.length;
-    const lifeSciCount = keptBySubtype["private"] || 0; // life sci are mostly private in biotech theme
-    // Note: diversity caps are advisory counters logged; actual micro-query fill would require another search pass
-    // For now, log the diversity metrics
+    const lifeSciKeys = new Set(["biotech_life_sciences"]);
+    const lifeSciCount = Object.entries(keptByIndustry)
+      .filter(([k]) => lifeSciKeys.has(k))
+      .reduce((sum, [, v]) => sum + v, 0);
+    const lifeSciPct = totalKept > 0 ? lifeSciCount / totalKept : 0;
+
+    // Identify under-represented categories that need micro-query fill
+    const underRepresented: string[] = [];
+    if (totalKept > 0) {
+      const targetKeys = selectedIndustryKeys && selectedIndustryKeys.size > 0
+        ? Array.from(selectedIndustryKeys)
+        : Object.keys(keptByIndustry);
+      for (const key of targetKeys) {
+        const count = keptByIndustry[key] || 0;
+        if (count / totalKept < MIN_CATEGORY_PCT && !lifeSciKeys.has(key)) {
+          underRepresented.push(key);
+        }
+      }
+    }
+
+    // Advisory: log diversity metrics (actual micro-query fill would require another search pass,
+    // which we implement if firecrawlKey is available and there are under-represented categories)
+    let microQueryFills = 0;
+    if (firecrawlKey && underRepresented.length > 0 && totalKept > 5) {
+      console.log(`Diversity fill needed for: ${underRepresented.join(", ")}`);
+      // Run one micro-query per under-represented industry (max 3)
+      for (const industryKey of underRepresented.slice(0, 3)) {
+        const industryLabel = Object.entries(INDUSTRY_INFERENCE_MAP).find(([k]) => k === industryKey)?.[0] || industryKey;
+        const microQuery = `Massachusetts ${industryLabel.replace(/_/g, " ")} company employer`;
+        try {
+          const searchResp = await fetch("https://api.firecrawl.dev/v1/search", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ query: microQuery, limit: 5 }),
+          });
+          if (searchResp.ok) {
+            const searchData = await searchResp.json();
+            for (const result of searchData.data || []) {
+              const url = result.url || "";
+              const domain = extractDomain(url);
+              if (!domain || existingDomains.has(domain) || candidateDomains.has(domain)) continue;
+              if (SOCIAL_DOMAINS.test(domain) || SPAM_DOMAIN_PATTERNS.test(domain) || isNewsDomain(domain)) continue;
+              // Quick add as candidate for this industry
+              candidateDomains.set(domain, { url: `https://${domain}`, title: result.title || "", description: result.description || "" });
+              microQueryFills++;
+            }
+          }
+        } catch (e) {
+          searchErrors.push(`Micro-query error for ${industryKey}: ${e.message}`);
+        }
+      }
+      if (microQueryFills > 0) {
+        console.log(`Diversity micro-queries added ${microQueryFills} new candidates`);
+      }
+    }
+
     const diversityMetrics = {
-      life_sci_pct: totalKept > 0 ? Math.round((lifeSciCount / totalKept) * 100) : 0,
+      life_sci_pct: totalKept > 0 ? Math.round(lifeSciPct * 100) : 0,
+      life_sci_over_cap: lifeSciPct > LIFE_SCI_CAP,
       subtypes: { ...keptBySubtype },
+      by_industry: { ...keptByIndustry },
+      under_represented: underRepresented,
+      micro_query_fills: microQueryFills,
     };
 
     // ─── Audit log ───
     const summary = {
       mode,
-      theme: mode === "auto" ? (DAY_THEMES[new Date().getDay()] || DAY_THEMES[1]).label : "manual",
+      theme: mode === "auto" ? themeLabel : "manual",
       queries_run: queries.length,
       domains_found: candidateDomains.size,
       candidates_created: candidatesCreated,
@@ -847,8 +963,11 @@ Deno.serve(async (req) => {
       rejected_news_domain: rejectedNewsDomain,
       rejected_path_only: rejectedPathOnly,
       rejected_ecosystem: rejectedEcosystem,
+      rejected_industry_mismatch: rejectedIndustryMismatch,
+      rejected_repeat_30d: rejectedRepeat30d,
       kept_candidates: keptCandidates.length,
       kept_by_subtype: keptBySubtype,
+      kept_by_industry: keptByIndustry,
       diversity: diversityMetrics,
       errors: [...searchErrors, ...scrapeErrors].slice(0, 10),
     };
