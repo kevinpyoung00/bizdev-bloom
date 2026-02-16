@@ -54,14 +54,16 @@ const HEADER_MAP: Record<string, RegExp> = {
   title: /title|job.?title|position/i,
   email: /email|e-?mail/i,
   phone: /phone|mobile|direct.?phone/i,
-  linkedin_url: /linkedin|li.?url/i,
+  linkedin_url: /linkedin|li.?url|li.?profile/i,
   company_name: /company|org|account/i,
-  company_domain: /domain|website|url/i,
+  company_domain: /\b(domain|website|company.?url|web)\b/i,
   industry: /industry|sector/i,
   employee_count: /employee|emp.?count|size|headcount/i,
   hq_city: /city|hq.?city/i,
   hq_state: /state|hq.?state|region/i,
 };
+
+const LINKEDIN_URL_RE = /linkedin\.com/i;
 
 function autoMapHeaders(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {};
@@ -195,15 +197,23 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         return '';
       };
 
+      // Sanitize: if company_domain looks like a LinkedIn URL, move it to linkedin_url
+      let finalDomain = domainPick?.value || '';
+      let finalLinkedin = linkedinPick?.value || '';
+      if (LINKEDIN_URL_RE.test(finalDomain)) {
+        if (!finalLinkedin) finalLinkedin = finalDomain;
+        finalDomain = '';
+      }
+
       results.push({
         first_name: firstNonEmpty('first_name'),
         last_name: firstNonEmpty('last_name'),
         title: titlePick?.value || '',
         email: emailPick?.value || '',
         phone: phonePick?.value || '',
-        linkedin_url: linkedinPick?.value || '',
+        linkedin_url: finalLinkedin,
         company_name: firstNonEmpty('company_name'),
-        company_domain: domainPick?.value || '',
+        company_domain: finalDomain,
         industry: firstNonEmpty('industry'),
         employee_count: firstNonEmpty('employee_count'),
         hq_city: firstNonEmpty('hq_city'),
@@ -227,12 +237,15 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
       for (const row of merged) {
         const canonical = canonicalCompanyName(row.company_name);
         const empCount = parseInt(row.employee_count) || null;
+        // Final safeguard: never store LinkedIn URLs as company domain
+        const cleanDomain = (row.company_domain && !LINKEDIN_URL_RE.test(row.company_domain)) ? row.company_domain : '';
+        const linkedinUrl = row.linkedin_url || (LINKEDIN_URL_RE.test(row.company_domain) ? row.company_domain : '');
 
         // Find existing account by domain or canonical name
         let accountId: string | null = null;
 
-        if (row.company_domain) {
-          const { data } = await supabase.from('accounts').select('id').eq('domain', row.company_domain.toLowerCase()).limit(1);
+        if (cleanDomain) {
+          const { data } = await supabase.from('accounts').select('id').eq('domain', cleanDomain.toLowerCase()).limit(1);
           if (data && data.length > 0) { accountId = data[0].id; mergeCount++; }
         }
 
@@ -244,13 +257,13 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         if (!accountId) {
           const { data, error } = await supabase.from('accounts').insert({
             name: row.company_name,
-            domain: row.company_domain || null,
+            domain: cleanDomain || null,
             canonical_company_name: canonical,
             industry: row.industry || null,
             employee_count: empCount,
             hq_city: row.hq_city || null,
             hq_state: row.hq_state || null,
-            merge_keys: { domain: row.company_domain || undefined, canonical },
+            merge_keys: { domain: cleanDomain || undefined, canonical },
           } as any).select('id').single();
           if (error) { console.error('Account insert error:', error); continue; }
           accountId = data.id;
@@ -266,8 +279,8 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           const { data } = await supabase.from('contacts_le').select('id').eq('email', row.email).limit(1);
           if (data && data.length > 0) existingContactId = data[0].id;
         }
-        if (!existingContactId && row.linkedin_url) {
-          const { data } = await supabase.from('contacts_le').select('id').eq('linkedin_url', row.linkedin_url).limit(1);
+        if (!existingContactId && linkedinUrl) {
+          const { data } = await supabase.from('contacts_le').select('id').eq('linkedin_url', linkedinUrl).limit(1);
           if (data && data.length > 0) existingContactId = data[0].id;
         }
 
@@ -283,7 +296,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             title: row.title || undefined,
             email: row.email || undefined,
             phone: row.phone || undefined,
-            linkedin_url: row.linkedin_url || undefined,
+            linkedin_url: linkedinUrl || undefined,
             account_id: accountId,
           } as any).eq('id', existingContactId);
           mergeCount++;
@@ -294,7 +307,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             title: row.title || null,
             email: row.email || null,
             phone: row.phone || null,
-            linkedin_url: row.linkedin_url || null,
+            linkedin_url: linkedinUrl || null,
             account_id: accountId,
             import_log: [importLogEntry],
           } as any);
