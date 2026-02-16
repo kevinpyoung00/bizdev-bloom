@@ -46,7 +46,7 @@ interface ImportD365ResultsProps {
 export function ImportD365Results({ open, onOpenChange }: ImportD365ResultsProps) {
   const queryClient = useQueryClient();
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<{ matched: number; unmatched: number } | null>(null);
+  const [result, setResult] = useState<{ matched: number; unmatched: number; unowned: number; owned: number; duplicateInactive: number } | null>(null);
 
   const handleFile = useCallback(async (file: File) => {
     setProcessing(true);
@@ -60,6 +60,9 @@ export function ImportD365Results({ open, onOpenChange }: ImportD365ResultsProps
 
       let matched = 0;
       let unmatched = 0;
+      let unownedCount = 0;
+      let ownedCount = 0;
+      let duplicateInactiveCount = 0;
 
       for (const row of rows) {
         const company = String(row.company || row.Company || row['Account Name'] || '').trim();
@@ -85,11 +88,14 @@ export function ImportD365Results({ open, onOpenChange }: ImportD365ResultsProps
 
         if (!owned) {
           d365_status = 'unowned';
+          unownedCount++;
         } else if (owned && !inactiveFlag) {
           d365_status = 'owned';
+          ownedCount++;
         } else {
           d365_status = 'duplicate_inactive';
           needs_review = true;
+          duplicateInactiveCount++;
         }
 
         await supabase.from('accounts').update({
@@ -103,14 +109,14 @@ export function ImportD365Results({ open, onOpenChange }: ImportD365ResultsProps
         matched++;
       }
 
-      setResult({ matched, unmatched });
+      setResult({ matched, unmatched, unowned: unownedCount, owned: ownedCount, duplicateInactive: duplicateInactiveCount });
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
-      toast.success(`D365 results imported: ${matched} matched, ${unmatched} unmatched`);
+      toast.success(`Imported: Unowned ${unownedCount} · Owned ${ownedCount} · Duplicate/Inactive ${duplicateInactiveCount} · Unmatched ${unmatched}`);
 
       await supabase.from('audit_log').insert({
         actor: 'user', action: 'import_d365_results',
         entity_type: 'accounts',
-        details: { matched, unmatched, total: rows.length },
+        details: { matched, unmatched, unowned: unownedCount, owned: ownedCount, duplicateInactive: duplicateInactiveCount, total: rows.length },
       });
     } catch (err: any) {
       toast.error(`Import failed: ${err.message}`);
@@ -132,7 +138,9 @@ export function ImportD365Results({ open, onOpenChange }: ImportD365ResultsProps
           <div className="text-center py-6 space-y-3">
             <CheckCircle2 size={40} className="mx-auto text-primary" />
             <p className="text-sm text-foreground font-medium">Import complete</p>
-            <p className="text-xs text-muted-foreground">{result.matched} matched, {result.unmatched} unmatched</p>
+            <p className="text-xs text-muted-foreground">
+              Unowned {result.unowned} · Owned {result.owned} · Duplicate/Inactive {result.duplicateInactive} · Unmatched {result.unmatched}
+            </p>
             <Button size="sm" onClick={() => { setResult(null); onOpenChange(false); }}>Done</Button>
           </div>
         ) : (
