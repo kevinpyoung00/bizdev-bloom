@@ -264,17 +264,45 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             )}
           </div>
 
-          {/* Suggested Persona */}
+          {/* Contact / Suggested Persona */}
           <div className="border border-border rounded-lg p-3">
-            <SuggestedPersonaBadge
-              employeeCount={account.employee_count}
-              industryKey={industryKey}
-              signals={rawReason}
-              companyName={account.name}
-              zywaveId={zywaveId}
-              hqState={account.hq_state}
-              variant="full"
-            />
+            {primaryContact ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <User size={12} className="text-primary" />
+                  <span className="text-xs font-semibold text-foreground">Primary Contact</span>
+                </div>
+                <div>
+                  <span className="text-sm font-medium text-foreground">{primaryContact.first_name} {primaryContact.last_name}</span>
+                  {primaryContact.title && <p className="text-xs text-muted-foreground">{primaryContact.title}</p>}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {primaryContact.email && (
+                    <a href={`mailto:${primaryContact.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                      <Mail size={12} /> {primaryContact.email}
+                    </a>
+                  )}
+                  {primaryContact.phone && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {primaryContact.phone}</span>
+                  )}
+                  {primaryContact.linkedin_url && (
+                    <a href={primaryContact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                      <Linkedin size={12} /> LinkedIn
+                    </a>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <SuggestedPersonaBadge
+                employeeCount={account.employee_count}
+                industryKey={industryKey}
+                signals={rawReason}
+                companyName={account.name}
+                zywaveId={zywaveId}
+                hqState={account.hq_state}
+                variant="full"
+              />
+            )}
           </div>
 
           {/* Signal Details */}
