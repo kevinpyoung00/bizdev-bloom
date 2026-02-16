@@ -42,14 +42,16 @@ export function useClaimLead() {
         .eq('id', leadId);
       if (error) throw error;
 
-      // Audit log
-      await supabase.from('audit_log').insert({
-        actor: 'user',
-        action: 'claim_lead',
-        entity_type: 'lead_queue',
-        entity_id: leadId,
-        details: { persona, industry_key },
-      });
+      // Audit log (best-effort, don't block main action)
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user',
+          action: 'claim_lead',
+          entity_type: 'lead_queue',
+          entity_id: leadId,
+          details: { persona, industry_key },
+        });
+      } catch (_) { /* audit log failure is non-critical */ }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
@@ -77,13 +79,15 @@ export function useRejectLead() {
         .eq('id', leadId);
       if (error) throw error;
 
-      await supabase.from('audit_log').insert({
-        actor: 'user',
-        action: 'reject_lead',
-        entity_type: 'lead_queue',
-        entity_id: leadId,
-        details: { reason },
-      });
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user',
+          action: 'reject_lead',
+          entity_type: 'lead_queue',
+          entity_id: leadId,
+          details: { reason },
+        });
+      } catch (_) { /* audit log failure is non-critical */ }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
@@ -109,12 +113,14 @@ export function useMarkUploaded() {
         .in('id', leadIds);
       if (error) throw error;
 
-      await supabase.from('audit_log').insert({
-        actor: 'user',
-        action: 'mark_uploaded',
-        entity_type: 'lead_queue',
-        details: { lead_ids: leadIds, count: leadIds.length },
-      });
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user',
+          action: 'mark_uploaded',
+          entity_type: 'lead_queue',
+          details: { lead_ids: leadIds, count: leadIds.length },
+        });
+      } catch (_) { /* audit log failure is non-critical */ }
     },
     onSuccess: (_, leadIds) => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
@@ -138,12 +144,14 @@ export function useStartCampaign() {
         .in('id', leadIds);
       if (error) throw error;
 
-      await supabase.from('audit_log').insert({
-        actor: 'user',
-        action: 'start_campaign',
-        entity_type: 'lead_queue',
-        details: { lead_ids: leadIds },
-      });
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user',
+          action: 'start_campaign',
+          entity_type: 'lead_queue',
+          details: { lead_ids: leadIds },
+        });
+      } catch (_) { /* audit log failure is non-critical */ }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });

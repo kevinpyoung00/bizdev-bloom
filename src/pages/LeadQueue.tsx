@@ -111,11 +111,13 @@ async function exportClaimedExcel(leads: LeadWithAccount[]) {
   XLSX.writeFile(wb, `d365-export-${new Date().toISOString().split('T')[0]}.xlsx`);
   toast.success(`Exported ${claimed.length} claimed leads (${rows.length} rows)`);
 
-  await supabase.from('audit_log').insert({
-    actor: 'user', action: 'export_claimed',
-    entity_type: 'lead_queue',
-    details: { count: claimed.length, rows: rows.length },
-  });
+  try {
+    await supabase.from('audit_log').insert({
+      actor: 'user', action: 'export_claimed',
+      entity_type: 'lead_queue',
+      details: { count: claimed.length, rows: rows.length },
+    });
+  } catch (_) { /* non-critical */ }
 }
 
 // ── Counter bar ──
