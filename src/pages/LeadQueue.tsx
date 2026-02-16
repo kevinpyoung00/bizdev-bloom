@@ -301,13 +301,13 @@ export default function LeadQueue() {
                             </TableCell>
                             <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
-                              <div className="flex items-center gap-1">
+                              <div className="flex flex-col items-center gap-1">
                                 {claimStatus === 'new' && (
                                   <>
-                                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
-                                      Claim
+                                    <Button size="sm" className="h-7 w-7 p-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white" title="Claim" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
+                                      <CheckCircle2 size={14} />
                                     </Button>
-                                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-warning" title="Needs Review" onClick={(e) => handleNeedsReview(lead, e)}>
+                                    <Button size="sm" className="h-7 w-7 p-0 rounded-full bg-orange-500 hover:bg-orange-600 text-white" title="Needs Review" onClick={(e) => handleNeedsReview(lead, e)}>
                                       <AlertTriangle size={14} />
                                     </Button>
                                     {rejectingId === lead.id ? (
@@ -322,13 +322,13 @@ export default function LeadQueue() {
                                         </SelectContent>
                                       </Select>
                                     ) : (
-                                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setRejectingId(lead.id)}>
+                                      <Button size="sm" className="h-7 w-7 p-0 rounded-full bg-red-600 hover:bg-red-700 text-white" title="Reject" onClick={() => setRejectingId(lead.id)}>
                                         <X size={14} />
                                       </Button>
                                     )}
                                   </>
                                 )}
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleView(lead)}>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={() => handleView(lead)}>
                                   <Eye size={14} />
                                 </Button>
                               </div>
