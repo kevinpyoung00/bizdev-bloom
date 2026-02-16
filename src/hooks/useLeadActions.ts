@@ -70,9 +70,9 @@ export function useRejectLead() {
       const { error } = await supabase
         .from('lead_queue')
         .update({
-          claim_status: 'rejected',
-          reject_reason: reason,
           status: 'rejected',
+          rejected_at: new Date().toISOString(),
+          rejected_reason: reason,
         } as any)
         .eq('id', leadId);
       if (error) throw error;
@@ -87,6 +87,8 @@ export function useRejectLead() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
+      queryClient.invalidateQueries({ queryKey: ['needs-review-accounts'] });
       toast({ title: 'Lead rejected' });
     },
     onError: (err: any) => {
@@ -160,8 +162,8 @@ export function useRejectedLeads() {
       const { data, error } = await supabase
         .from('lead_queue')
         .select('*, accounts(*)')
-        .eq('claim_status', 'rejected')
-        .order('updated_at', { ascending: false });
+        .eq('status', 'rejected')
+        .order('rejected_at', { ascending: false });
       if (error) throw error;
       return (data || []).map((row: any) => ({
         id: row.id,
@@ -174,7 +176,8 @@ export function useRejectedLeads() {
         claimed_at: row.claimed_at,
         persona: row.persona,
         industry_key: row.industry_key,
-        reject_reason: row.reject_reason,
+        rejected_reason: row.rejected_reason,
+        rejected_at: row.rejected_at,
         updated_at: row.updated_at,
         account: row.accounts,
       }));
@@ -190,7 +193,7 @@ export function useRestoreLead() {
     mutationFn: async (leadId: string) => {
       const { error } = await supabase
         .from('lead_queue')
-        .update({ claim_status: 'new', status: 'pending', reject_reason: null } as any)
+        .update({ claim_status: 'new', status: 'pending', rejected_reason: null, rejected_at: null } as any)
         .eq('id', leadId);
       if (error) throw error;
     },

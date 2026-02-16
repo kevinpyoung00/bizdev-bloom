@@ -493,8 +493,8 @@ export default function LeadQueue() {
                       rejectedLeads.map((lead: any) => (
                         <TableRow key={lead.id}>
                           <TableCell className="font-medium text-foreground">{lead.account?.name || '—'}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{lead.reject_reason || '—'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{lead.updated_at ? new Date(lead.updated_at).toLocaleDateString() : '—'}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{lead.rejected_reason || '—'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{lead.rejected_at ? new Date(lead.rejected_at).toLocaleDateString() : '—'}</TableCell>
                           <TableCell>
                             <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => restoreLead.mutate(lead.id)} disabled={restoreLead.isPending}>
                               <RotateCcw size={12} /> Restore
