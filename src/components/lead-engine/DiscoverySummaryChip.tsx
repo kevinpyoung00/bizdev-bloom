@@ -18,6 +18,9 @@ export interface DiscoverySummaryData {
   rejected_pdf?: number;
   rejected_generic?: number;
   rejected_unknown_hq?: number;
+  rejected_news_domain?: number;
+  rejected_path_only?: number;
+  rejected_ecosystem?: number;
   kept_candidates?: number;
   errors?: string[];
 }
@@ -32,7 +35,8 @@ export default function DiscoverySummaryChip({ data, onViewPreview }: Props) {
 
   const hasErrors = (data.errors?.length ?? 0) > 0;
   const totalRejected = (data.rejected_carrier ?? 0) + (data.rejected_hospital ?? 0) +
-    (data.rejected_university_lab ?? 0) + (data.rejected_pdf ?? 0) + (data.rejected_generic ?? 0);
+    (data.rejected_university_lab ?? 0) + (data.rejected_pdf ?? 0) + (data.rejected_generic ?? 0) +
+    (data.rejected_news_domain ?? 0) + (data.rejected_path_only ?? 0) + (data.rejected_ecosystem ?? 0);
 
   return (
     <TooltipProvider>
@@ -47,12 +51,14 @@ export default function DiscoverySummaryChip({ data, onViewPreview }: Props) {
               Found {data.domains_found ?? 0} · MA {data.hq_MA ?? 0} · NE-HI {data.hq_NE ?? 0} · Created {data.candidates_created ?? 0} · Updated {data.candidates_updated ?? 0} · ICP-Rejected {totalRejected}
             </Badge>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs max-w-[400px]">
+          <TooltipContent side="bottom" className="text-xs max-w-[440px]">
             <div className="space-y-1">
               <p>Mode: {data.mode} · Theme: {data.theme}</p>
               <p>Queries: {data.queries_run} · Domains: {data.domains_found}</p>
               <p>Discarded (non-NE): {data.discarded_non_NE ?? 0} · Unknown HQ: {data.rejected_unknown_hq ?? 0}</p>
-              <p>Rejected → Carrier: {data.rejected_carrier ?? 0} · Hospital: {data.rejected_hospital ?? 0} · Univ Lab: {data.rejected_university_lab ?? 0} · PDF: {data.rejected_pdf ?? 0} · Generic: {data.rejected_generic ?? 0}</p>
+              <p>Rejected → Carrier: {data.rejected_carrier ?? 0} · Hospital: {data.rejected_hospital ?? 0} · Univ Lab: {data.rejected_university_lab ?? 0}</p>
+              <p>News/Media: {data.rejected_news_domain ?? 0} · Article Path: {data.rejected_path_only ?? 0} · Ecosystem: {data.rejected_ecosystem ?? 0}</p>
+              <p>PDF: {data.rejected_pdf ?? 0} · Generic: {data.rejected_generic ?? 0}</p>
               {hasErrors && <p className="text-destructive">Errors: {data.errors?.length}</p>}
             </div>
           </TooltipContent>
