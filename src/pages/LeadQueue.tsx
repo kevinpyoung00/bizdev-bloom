@@ -35,15 +35,20 @@ function SignalPillsRow({ leadSignals, triggers }: { leadSignals: any; triggers:
   const pills = buildPillsFromLeadSignals(leadSignals, triggers);
   if (pills.length === 0) return <span className="text-xs text-muted-foreground italic">No signals</span>;
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5">
       {pills.map((pill, i) => (
         <Tooltip key={i}>
           <TooltipTrigger asChild>
-            <Badge variant={pill.variant} className="text-[10px] px-1.5 py-0 gap-0.5 font-medium rounded-[5px] h-5 cursor-default">
+            <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-[5px] whitespace-nowrap cursor-default border ${
+              pill.variant === 'default' ? 'bg-primary text-primary-foreground border-primary' :
+              pill.variant === 'destructive' ? 'bg-destructive text-destructive-foreground border-destructive' :
+              pill.variant === 'secondary' ? 'bg-secondary text-secondary-foreground border-secondary' :
+              'bg-background text-foreground border-border'
+            }`}>
               {pill.icon} {pill.label}
-            </Badge>
+            </span>
           </TooltipTrigger>
-          {pill.tooltip && <TooltipContent className="text-xs max-w-[220px]">{pill.tooltip}</TooltipContent>}
+          {pill.tooltip && <TooltipContent className="text-xs max-w-[240px]">{pill.tooltip}</TooltipContent>}
         </Tooltip>
       ))}
     </div>
