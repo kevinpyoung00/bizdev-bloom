@@ -13,7 +13,8 @@ export interface LeadWithAccount {
   claimed_at: string | null;
   persona: string | null;
   industry_key: string | null;
-  reject_reason: string | null;
+  rejected_reason: string | null;
+  rejected_at: string | null;
   account: {
     id: string;
     name: string;
@@ -48,7 +49,7 @@ export function useLeadQueue(scope: QueueScope = 'today') {
       let query = supabase
         .from('lead_queue')
         .select('*, accounts(*)')
-        .neq('claim_status', 'rejected')
+        .neq('status', 'rejected')
         .order('priority_rank', { ascending: true });
 
       if (scope === 'today') {
@@ -74,7 +75,8 @@ export function useLeadQueue(scope: QueueScope = 'today') {
         claimed_at: row.claimed_at,
         persona: row.persona,
         industry_key: row.industry_key,
-        reject_reason: row.reject_reason,
+        rejected_reason: row.rejected_reason,
+        rejected_at: row.rejected_at,
         account: row.accounts,
       })) as LeadWithAccount[];
     },

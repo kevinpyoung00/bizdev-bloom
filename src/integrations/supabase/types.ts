@@ -555,7 +555,8 @@ export type Database = {
           persona: string | null
           priority_rank: number
           reason: Json | null
-          reject_reason: string | null
+          rejected_at: string | null
+          rejected_reason: string | null
           run_date: string
           score: number
           status: string | null
@@ -571,7 +572,8 @@ export type Database = {
           persona?: string | null
           priority_rank: number
           reason?: Json | null
-          reject_reason?: string | null
+          rejected_at?: string | null
+          rejected_reason?: string | null
           run_date?: string
           score?: number
           status?: string | null
@@ -587,7 +589,8 @@ export type Database = {
           persona?: string | null
           priority_rank?: number
           reason?: Json | null
-          reject_reason?: string | null
+          rejected_at?: string | null
+          rejected_reason?: string | null
           run_date?: string
           score?: number
           status?: string | null
