@@ -276,7 +276,7 @@ function scoreAccount(account: any, contacts: any[]): ScoredAccount {
 
   const resolvedDomain = deriveDomain(account.domain, account.website);
   let guardrail: string | null = null;
-  if (!resolvedDomain && !account.website) guardrail = "missing_domain_and_website";
+  // Domain missing is no longer a guardrail — we auto-discover domains before scoring
   if (disposition === "suppressed") guardrail = "suppressed";
   if (disposition?.startsWith("rejected_")) guardrail = `disposition_${disposition}`;
 
@@ -386,48 +386,8 @@ function selectTop50(scored: ScoredAccount[]): ScoredAccount[] {
     return (a.domain ?? "").localeCompare(b.domain ?? "");
   });
 
-  // Only MA and NE high-intent are eligible — exclude all others
-  const maPool = sorted.filter((a) => {
-    const s = normalizeState(a.hq_state);
-    return s === "MA" || s === "MASSACHUSETTS";
-  });
-
-  const nePool = sorted.filter((a) => {
-    const s = normalizeState(a.hq_state);
-    return NE_STATES.includes(s) && isHighIntent(a.triggers);
-  });
-
-  const selected: ScoredAccount[] = [];
-  const usedIds = new Set<string>();
-
-  // 45 MA slots
-  for (const a of maPool) {
-    if (selected.length >= 45) break;
-    selected.push(a);
-    usedIds.add(a.id);
-  }
-
-  // Up to 5 NE high-intent slots (do NOT backfill from non-NE)
-  let neCount = 0;
-  for (const a of nePool) {
-    if (neCount >= 5) break;
-    if (usedIds.has(a.id)) continue;
-    selected.push(a);
-    usedIds.add(a.id);
-    neCount++;
-  }
-
-  // If fewer than 45 MA, backfill remaining MA slots only
-  if (selected.length < 50) {
-    for (const a of maPool) {
-      if (selected.length >= 50) break;
-      if (usedIds.has(a.id)) continue;
-      selected.push(a);
-      usedIds.add(a.id);
-    }
-  }
-
-  return selected;
+  // Include ALL eligible candidates — no geography cap
+  return sorted;
 }
 
 // ─── Main handler ───
@@ -503,6 +463,48 @@ Deno.serve(async (req) => {
     const { data: allContacts } = await supabase.from("contacts_le").select("*");
     const contactsByAccount = new Map<string, any[]>();
     for (const c of allContacts || []) { if (!c.account_id) continue; if (!contactsByAccount.has(c.account_id)) contactsByAccount.set(c.account_id, []); contactsByAccount.get(c.account_id)!.push(c); }
+
+    // ─── Auto-discover missing domains via Firecrawl ───
+    const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+    if (firecrawlKey) {
+      const missingDomain = accounts.filter((a: any) => !deriveDomain(a.domain, a.website));
+      console.log(`Domain discovery: ${missingDomain.length} accounts missing domains`);
+
+      // Process in batches of 5 concurrently
+      const BATCH = 5;
+      for (let i = 0; i < missingDomain.length; i += BATCH) {
+        const batch = missingDomain.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.map(async (acct: any) => {
+            try {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 6000);
+              const resp = await fetch("https://api.firecrawl.dev/v1/search", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ query: `${acct.name} official website`, limit: 1 }),
+                signal: controller.signal,
+              });
+              clearTimeout(timeout);
+              if (!resp.ok) return null;
+              const data = await resp.json();
+              const url = data.data?.[0]?.url;
+              if (!url) return null;
+              const hostname = new URL(url).hostname.replace(/^www\./, "");
+              console.log(`  Found domain for "${acct.name}": ${hostname}`);
+              // Update account in DB
+              await supabase.from("accounts").update({ domain: hostname, website: url } as any).eq("id", acct.id);
+              // Update in-memory too
+              acct.domain = hostname;
+              acct.website = url;
+              return hostname;
+            } catch { return null; }
+          })
+        );
+      }
+    } else {
+      console.log("FIRECRAWL_API_KEY not set — skipping domain discovery");
+    }
 
     const scored = accounts.map((a) => {
       const s = scoreAccount(a, contactsByAccount.get(a.id) || []);
