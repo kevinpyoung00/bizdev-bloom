@@ -203,13 +203,28 @@ export function useRunScoring() {
   });
 }
 
+export interface DiscoveryRunParams {
+  mode?: 'auto' | 'manual';
+  params?: {
+    industries?: string[];
+    triggers?: string[];
+    geography?: string[];
+    company_size?: string;
+    discovery_type?: string;
+    result_count?: number;
+    sub_sectors?: string[];
+  };
+  override_ma_ne?: boolean;
+  candidate_cap?: number;
+}
+
 export function useRunDiscovery() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (runParams?: DiscoveryRunParams) => {
       const { data, error } = await supabase.functions.invoke('run-discovery', {
-        body: {},
+        body: runParams || { mode: 'auto' },
       });
       if (error) throw error;
       if (data && data.success === false) {
@@ -222,7 +237,7 @@ export function useRunDiscovery() {
       queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
       queryClient.invalidateQueries({ queryKey: ['needs-review-accounts'] });
       sonnerToast.success('Discovery complete', {
-        description: `Added: ${data.candidates_added} · Updated: ${data.candidates_updated} · MA: ${data.hq_MA} · NE: ${data.hq_NE} · Discarded (non-NE): ${data.discarded_non_NE}`,
+        description: `Found: ${data.domains_found ?? 0} · Kept: MA ${data.hq_MA ?? 0}, NE ${data.hq_NE ?? 0} · Created: ${data.candidates_created ?? 0} · Updated: ${data.candidates_updated ?? 0}`,
         duration: 8000,
       });
     },

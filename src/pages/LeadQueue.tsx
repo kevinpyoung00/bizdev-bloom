@@ -7,11 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { useLeadQueue, useRunScoring, useRunDiscovery, type QueueScope } from '@/hooks/useLeadEngine';
+import { useLeadQueue, useRunScoring, useRunDiscovery, type QueueScope, type DiscoveryRunParams } from '@/hooks/useLeadEngine';
 import { useClaimLead, useRejectLead, useMarkUploaded, useRejectedLeads, useRestoreLead, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -29,6 +29,9 @@ import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
 import { recommendPersona } from '@/lib/personaRecommend';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
+import DiscoveryControlPanel, { type DiscoveryPanelParams } from '@/components/lead-engine/DiscoveryControlPanel';
+import PreviewCandidatesDrawer, { type PreviewCandidate } from '@/components/lead-engine/PreviewCandidatesDrawer';
+import DiscoverySummaryChip, { type DiscoverySummaryData } from '@/components/lead-engine/DiscoverySummaryChip';
 
 // ── Signal Pills Row with tooltips ──
 function SignalPillsRow({ leadSignals, triggers }: { leadSignals: any; triggers: any }) {
@@ -154,7 +157,6 @@ export default function LeadQueue() {
   const [hideOwned, setHideOwned] = useState(saved?.hideOwned ?? false);
   const [showNeedsReviewOnly, setShowNeedsReviewOnly] = useState(saved?.showNeedsReviewOnly ?? false);
 
-  // Persist filters
   useEffect(() => { saveFilters({ scope, hideOwned, showNeedsReviewOnly }); }, [scope, hideOwned, showNeedsReviewOnly]);
 
   const { data: leads = [], isLoading } = useLeadQueue(scope);
@@ -172,6 +174,12 @@ export default function LeadQueue() {
   const [importD365Open, setImportD365Open] = useState(false);
   const [multiImportOpen, setMultiImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('queue');
+
+  // Discovery state
+  const [discoveryPanelOpen, setDiscoveryPanelOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [discoverySummary, setDiscoverySummary] = useState<DiscoverySummaryData | null>(null);
+  const [previewCandidates, setPreviewCandidates] = useState<PreviewCandidate[]>([]);
 
   const filteredLeads = leads.filter(l => {
     const d365Status = (l.account as any).d365_status || 'unknown';
@@ -247,6 +255,42 @@ export default function LeadQueue() {
     }
   };
 
+  // Auto-discovery handler
+  const handleAutoDiscovery = () => {
+    runDiscovery.mutate({ mode: 'auto' }, {
+      onSuccess: (data) => {
+        setDiscoverySummary(data);
+        setPreviewCandidates(data.preview_candidates || []);
+      },
+    });
+  };
+
+  // Manual discovery handler
+  const handleManualDiscovery = (params: DiscoveryPanelParams) => {
+    const runParams: DiscoveryRunParams = {
+      mode: 'manual',
+      params: {
+        industries: params.industries,
+        triggers: params.triggers,
+        geography: params.geography,
+        company_size: params.company_size,
+        discovery_type: params.discovery_type,
+        result_count: params.result_count,
+      },
+      override_ma_ne: params.override_ma_ne,
+    };
+    runDiscovery.mutate(runParams, {
+      onSuccess: (data) => {
+        setDiscoverySummary(data);
+        setPreviewCandidates(data.preview_candidates || []);
+        setDiscoveryPanelOpen(false);
+        if (params.score_after) {
+          runScoring.mutate(false);
+        }
+      },
+    });
+  };
+
   const needsReviewCount = leads.filter(l => (l.account as any).needs_review).length;
 
   // ── Empty state ──
@@ -289,9 +333,12 @@ export default function LeadQueue() {
             <CounterBar leads={leads} hideOwned={hideOwned} />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => runDiscovery.mutate()} disabled={runDiscovery.isPending}>
+            <Button variant="outline" size="sm" onClick={handleAutoDiscovery} disabled={runDiscovery.isPending}>
               {runDiscovery.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Radar size={16} className="mr-1" />}
-              Run Discovery
+              Run Auto-Discovery
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setDiscoveryPanelOpen(true)}>
+              <Settings2 size={16} className="mr-1" /> Discovery Panel
             </Button>
             <Button variant="outline" size="sm" onClick={() => runScoring.mutate(false)} disabled={runScoring.isPending}>
               {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : null}
@@ -315,6 +362,14 @@ export default function LeadQueue() {
             </Button>
           </div>
         </div>
+
+        {/* Discovery Summary Chip */}
+        {discoverySummary && (
+          <DiscoverySummaryChip
+            data={discoverySummary}
+            onViewPreview={() => setPreviewOpen(true)}
+          />
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -455,10 +510,10 @@ export default function LeadQueue() {
                                     ) : (
                                       <Button size="sm" className="h-7 w-full rounded-full bg-red-600 hover:bg-red-700 text-white text-[10px] px-3" onClick={() => setRejectingId(lead.id)}>
                                         <X size={12} className="mr-1" /> Reject
-                                </Button>
-                                  )}
-                                </>
-                              )}
+                                    </Button>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -521,6 +576,19 @@ export default function LeadQueue() {
       <AccountDrawer lead={selectedLead} open={drawerOpen} onOpenChange={setDrawerOpen} />
       <ImportD365Results open={importD365Open} onOpenChange={setImportD365Open} />
       <MultiSourceImporter open={multiImportOpen} onOpenChange={setMultiImportOpen} />
+      <DiscoveryControlPanel
+        open={discoveryPanelOpen}
+        onOpenChange={setDiscoveryPanelOpen}
+        onRun={handleManualDiscovery}
+        isRunning={runDiscovery.isPending}
+      />
+      <PreviewCandidatesDrawer
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        candidates={previewCandidates}
+        onProceedToScore={() => runScoring.mutate(false)}
+        isScoringPending={runScoring.isPending}
+      />
     </Layout>
   );
 }
