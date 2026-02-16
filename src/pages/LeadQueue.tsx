@@ -304,7 +304,7 @@ export default function LeadQueue() {
                               <div className="flex flex-col items-center gap-1">
                                 {claimStatus === 'new' && (
                                   <>
-                                    <Button size="sm" className="h-7 w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-3" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
+                                    <Button size="sm" className="h-7 w-full rounded-full bg-green-600 hover:bg-green-700 text-white text-[10px] px-3" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
                                       <CheckCircle2 size={12} className="mr-1" /> Claim
                                     </Button>
                                     <Button size="sm" className="h-7 w-full rounded-full bg-orange-500 hover:bg-orange-600 text-white text-[10px] px-3" onClick={(e) => handleNeedsReview(lead, e)}>
@@ -328,7 +328,7 @@ export default function LeadQueue() {
                                     )}
                                   </>
                                 )}
-                                <Button variant="ghost" size="sm" className="h-7 w-full rounded-full text-[10px] px-3" onClick={() => handleView(lead)}>
+                                <Button variant="ghost" size="sm" className="h-7 w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-3" onClick={() => handleView(lead)}>
                                   <Eye size={12} className="mr-1" /> Details
                                 </Button>
                               </div>
