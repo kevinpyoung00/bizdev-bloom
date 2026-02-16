@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2, Trash2 } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2, Trash2, Mail, Phone, Linkedin } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -524,7 +524,7 @@ export default function LeadQueue() {
                       <TableHead className="w-20">Emp.</TableHead>
                       <TableHead className="w-16">Region</TableHead>
                       <TableHead>Signals</TableHead>
-                      <TableHead className="w-32">Persona</TableHead>
+                      <TableHead className="w-36">Contact / Persona</TableHead>
                       <TableHead className="w-28">D365</TableHead>
                       <TableHead className="w-28">Status</TableHead>
                       <TableHead className="w-40">Actions</TableHead>
@@ -566,14 +566,30 @@ export default function LeadQueue() {
                               <SignalPillsRow leadSignals={lead.reason?.lead_signals} triggers={lead.account.triggers} />
                             </TableCell>
                             <TableCell>
-                              <SuggestedPersonaBadge
-                                employeeCount={lead.account.employee_count}
-                                industryKey={lead.industry_key}
-                                signals={lead.reason}
-                                companyName={lead.account.name}
-                                zywaveId={lead.account.zywave_id}
-                                variant="compact"
-                              />
+                              {lead.primaryContact ? (
+                                <div className="space-y-0.5">
+                                  <span className="text-xs font-medium text-foreground truncate max-w-[140px] block">
+                                    {lead.primaryContact.first_name} {lead.primaryContact.last_name}
+                                  </span>
+                                  {lead.primaryContact.title && (
+                                    <p className="text-[9px] text-muted-foreground truncate max-w-[140px]">{lead.primaryContact.title}</p>
+                                  )}
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <Mail size={10} className={lead.primaryContact.email ? 'text-primary' : 'text-muted-foreground/30'} />
+                                    <Phone size={10} className={lead.primaryContact.phone ? 'text-primary' : 'text-muted-foreground/30'} />
+                                    <Linkedin size={10} className={lead.primaryContact.linkedin_url ? 'text-primary' : 'text-muted-foreground/30'} />
+                                  </div>
+                                </div>
+                              ) : (
+                                <SuggestedPersonaBadge
+                                  employeeCount={lead.account.employee_count}
+                                  industryKey={lead.industry_key}
+                                  signals={lead.reason}
+                                  companyName={lead.account.name}
+                                  zywaveId={lead.account.zywave_id}
+                                  variant="compact"
+                                />
+                              )}
                             </TableCell>
                             <TableCell>
                               <D365StatusBadge

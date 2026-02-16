@@ -3,6 +3,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { toast as sonnerToast } from 'sonner';
 
+export interface PrimaryContact {
+  first_name: string;
+  last_name: string;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  linkedin_url: string | null;
+}
+
 export interface LeadWithAccount {
   id: string;
   priority_rank: number;
@@ -16,6 +25,7 @@ export interface LeadWithAccount {
   industry_key: string | null;
   rejected_reason: string | null;
   rejected_at: string | null;
+  primaryContact: PrimaryContact | null;
   account: {
     id: string;
     name: string;
@@ -65,7 +75,35 @@ export function useLeadQueue(scope: QueueScope = 'today') {
       const { data, error } = await query;
       if (error) throw error;
 
-      return (data || []).map((row: any) => ({
+      const rows = data || [];
+
+      // Batch-fetch primary contacts for all account IDs
+      const accountIds = rows.map((r: any) => r.accounts?.id).filter(Boolean);
+      let contactsByAccount = new Map<string, PrimaryContact>();
+
+      if (accountIds.length > 0) {
+        const { data: contacts } = await supabase
+          .from('contacts_le')
+          .select('account_id, first_name, last_name, title, email, phone, linkedin_url, is_primary')
+          .in('account_id', accountIds)
+          .order('is_primary', { ascending: false });
+
+        // Keep first (primary) contact per account
+        for (const c of contacts || []) {
+          if (c.account_id && !contactsByAccount.has(c.account_id)) {
+            contactsByAccount.set(c.account_id, {
+              first_name: c.first_name,
+              last_name: c.last_name,
+              title: c.title,
+              email: c.email,
+              phone: c.phone,
+              linkedin_url: c.linkedin_url,
+            });
+          }
+        }
+      }
+
+      return rows.map((row: any) => ({
         id: row.id,
         priority_rank: row.priority_rank,
         score: row.score,
@@ -78,6 +116,7 @@ export function useLeadQueue(scope: QueueScope = 'today') {
         industry_key: row.industry_key,
         rejected_reason: row.rejected_reason,
         rejected_at: row.rejected_at,
+        primaryContact: contactsByAccount.get(row.accounts?.id) || null,
         account: row.accounts,
       })) as LeadWithAccount[];
     },
