@@ -304,15 +304,15 @@ export default function LeadQueue() {
                               <div className="flex flex-col items-center gap-1">
                                 {claimStatus === 'new' && (
                                   <>
-                                    <Button size="sm" className="h-7 w-7 p-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white" title="Claim" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
-                                      <CheckCircle2 size={14} />
+                                    <Button size="sm" className="h-7 w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-3" onClick={(e) => handleClaim(lead, e)} disabled={claimLead.isPending}>
+                                      <CheckCircle2 size={12} className="mr-1" /> Claim
                                     </Button>
-                                    <Button size="sm" className="h-7 w-7 p-0 rounded-full bg-orange-500 hover:bg-orange-600 text-white" title="Needs Review" onClick={(e) => handleNeedsReview(lead, e)}>
-                                      <AlertTriangle size={14} />
+                                    <Button size="sm" className="h-7 w-full rounded-full bg-orange-500 hover:bg-orange-600 text-white text-[10px] px-3" onClick={(e) => handleNeedsReview(lead, e)}>
+                                      <AlertTriangle size={12} className="mr-1" /> Review
                                     </Button>
                                     {rejectingId === lead.id ? (
                                       <Select onValueChange={(v) => handleReject(lead.id, v)}>
-                                        <SelectTrigger className="h-7 w-24 text-[10px]">
+                                        <SelectTrigger className="h-7 w-full text-[10px] rounded-full">
                                           <SelectValue placeholder="Reason" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -322,14 +322,14 @@ export default function LeadQueue() {
                                         </SelectContent>
                                       </Select>
                                     ) : (
-                                      <Button size="sm" className="h-7 w-7 p-0 rounded-full bg-red-600 hover:bg-red-700 text-white" title="Reject" onClick={() => setRejectingId(lead.id)}>
-                                        <X size={14} />
+                                      <Button size="sm" className="h-7 w-full rounded-full bg-red-600 hover:bg-red-700 text-white text-[10px] px-3" onClick={() => setRejectingId(lead.id)}>
+                                        <X size={12} className="mr-1" /> Reject
                                       </Button>
                                     )}
                                   </>
                                 )}
-                                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={() => handleView(lead)}>
-                                  <Eye size={14} />
+                                <Button variant="ghost" size="sm" className="h-7 w-full rounded-full text-[10px] px-3" onClick={() => handleView(lead)}>
+                                  <Eye size={12} className="mr-1" /> Details
                                 </Button>
                               </div>
                             </TableCell>
