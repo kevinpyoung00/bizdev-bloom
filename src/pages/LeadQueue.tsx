@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useLeadQueue, useRunScoring, useRunDiscovery, type QueueScope, type DiscoveryRunParams } from '@/hooks/useLeadEngine';
-import { useClaimLead, useRejectLead, useMarkUploaded, useRejectedLeads, useRestoreLead, REJECT_REASONS } from '@/hooks/useLeadActions';
+import { useClaimLead, useRejectLead, useMarkUploaded, useRejectedLeads, useRestoreLead, useBulkClaimLeads, useBulkReviewLeads, useBulkRejectLeads, useBulkRestoreLeads, REJECT_REASONS } from '@/hooks/useLeadActions';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -167,9 +167,14 @@ export default function LeadQueue() {
   const rejectLead = useRejectLead();
   const markUploaded = useMarkUploaded();
   const restoreLead = useRestoreLead();
+  const bulkClaim = useBulkClaimLeads();
+  const bulkReview = useBulkReviewLeads();
+  const bulkReject = useBulkRejectLeads();
+  const bulkRestore = useBulkRestoreLeads();
   const [selectedLead, setSelectedLead] = useState<LeadWithAccount | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [rejectedSelectedIds, setRejectedSelectedIds] = useState<Set<string>>(new Set());
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [importD365Open, setImportD365Open] = useState(false);
   const [multiImportOpen, setMultiImportOpen] = useState(false);
@@ -254,6 +259,50 @@ export default function LeadQueue() {
       });
     }
   };
+
+  // ── Bulk action handlers ──
+  const handleBulkClaim = () => {
+    const eligible = filteredLeads.filter(l =>
+      selectedIds.has(l.id) &&
+      ((l.account as any).d365_status === 'unowned' || (l.account as any).d365_status === 'unknown') &&
+      ((l as any).claim_status === 'new')
+    );
+    if (eligible.length === 0) { toast.info('No eligible leads to claim in selection'); return; }
+    bulkClaim.mutate(eligible.map(l => l.id), { onSuccess: () => setSelectedIds(new Set()) });
+  };
+
+  const handleBulkReview = () => {
+    const accountIds = filteredLeads.filter(l => selectedIds.has(l.id)).map(l => l.account.id);
+    if (accountIds.length === 0) return;
+    bulkReview.mutate(accountIds, { onSuccess: () => setSelectedIds(new Set()) });
+  };
+
+  const handleBulkReject = () => {
+    const ids = filteredLeads.filter(l => selectedIds.has(l.id)).map(l => l.id);
+    if (ids.length === 0) return;
+    bulkReject.mutate({ leadIds: ids, reason: 'bulk_reject_invalid_discovery' }, { onSuccess: () => setSelectedIds(new Set()) });
+  };
+
+  const handleBulkRestore = () => {
+    const ids = Array.from(rejectedSelectedIds);
+    if (ids.length === 0) return;
+    bulkRestore.mutate(ids, { onSuccess: () => setRejectedSelectedIds(new Set()) });
+  };
+
+  const toggleRejectedSelect = (id: string) => {
+    setRejectedSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllRejected = () => {
+    if (rejectedSelectedIds.size === rejectedLeads.length) setRejectedSelectedIds(new Set());
+    else setRejectedSelectedIds(new Set(rejectedLeads.map((l: any) => l.id)));
+  };
+
+  const allRejectedSelected = rejectedLeads.length > 0 && rejectedSelectedIds.size === rejectedLeads.length;
 
   // Auto-discovery handler
   const handleAutoDiscovery = () => {
@@ -412,6 +461,28 @@ export default function LeadQueue() {
               </Button>
             </div>
 
+            {/* Bulk action bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg">
+                <span className="text-xs font-medium text-foreground mr-2">{selectedIds.size} selected</span>
+                <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={handleBulkClaim} disabled={bulkClaim.isPending}>
+                  {bulkClaim.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <CheckCircle2 size={12} className="mr-1" />}
+                  Claim Selected
+                </Button>
+                <Button size="sm" className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white" onClick={handleBulkReview} disabled={bulkReview.isPending}>
+                  {bulkReview.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <AlertTriangle size={12} className="mr-1" />}
+                  Review Selected
+                </Button>
+                <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white" onClick={handleBulkReject} disabled={bulkReject.isPending}>
+                  {bulkReject.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <X size={12} className="mr-1" />}
+                  Reject Selected
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedIds(new Set())}>
+                  Clear
+                </Button>
+              </div>
+            )}
+
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -535,11 +606,26 @@ export default function LeadQueue() {
           </TabsContent>
 
           <TabsContent value="rejected">
+            {rejectedSelectedIds.size > 0 && (
+              <div className="flex items-center gap-2 p-3 mb-4 bg-muted/50 border border-border rounded-lg">
+                <span className="text-xs font-medium text-foreground mr-2">{rejectedSelectedIds.size} selected</span>
+                <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={handleBulkRestore} disabled={bulkRestore.isPending}>
+                  {bulkRestore.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RotateCcw size={12} className="mr-1" />}
+                  Restore Selected
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setRejectedSelectedIds(new Set())}>
+                  Clear
+                </Button>
+              </div>
+            )}
             <Card>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox checked={allRejectedSelected} onCheckedChange={toggleAllRejected} aria-label="Select all rejected" />
+                      </TableHead>
                       <TableHead>Company</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Rejected At</TableHead>
@@ -549,11 +635,14 @@ export default function LeadQueue() {
                   <TableBody>
                     {rejectedLeads.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">No rejected leads.</TableCell>
+                        <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">No rejected leads.</TableCell>
                       </TableRow>
                     ) : (
                       rejectedLeads.map((lead: any) => (
-                        <TableRow key={lead.id}>
+                        <TableRow key={lead.id} className={rejectedSelectedIds.has(lead.id) ? 'bg-accent/50' : ''}>
+                          <TableCell>
+                            <Checkbox checked={rejectedSelectedIds.has(lead.id)} onCheckedChange={() => toggleRejectedSelect(lead.id)} />
+                          </TableCell>
                           <TableCell className="font-medium text-foreground">{lead.account?.name || '—'}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{lead.rejected_reason || '—'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{lead.rejected_at ? new Date(lead.rejected_at).toLocaleDateString() : '—'}</TableCell>

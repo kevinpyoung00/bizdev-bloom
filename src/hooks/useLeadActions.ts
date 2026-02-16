@@ -230,3 +230,122 @@ export function useIndustrySettings() {
     },
   });
 }
+
+export function useBulkClaimLeads() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (leadIds: string[]) => {
+      const { error } = await supabase
+        .from('lead_queue')
+        .update({ claim_status: 'claimed', claimed_at: new Date().toISOString(), status: 'claimed' } as any)
+        .in('id', leadIds);
+      if (error) throw error;
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user', action: 'bulk_claim', entity_type: 'lead_queue',
+          details: { lead_ids: leadIds, count: leadIds.length },
+        });
+      } catch (_) {}
+    },
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      toast({ title: `${ids.length} leads claimed successfully` });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Bulk claim failed', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useBulkReviewLeads() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (accountIds: string[]) => {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ needs_review: true } as any)
+        .in('id', accountIds);
+      if (error) throw error;
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user', action: 'bulk_review', entity_type: 'accounts',
+          details: { account_ids: accountIds, count: accountIds.length },
+        });
+      } catch (_) {}
+    },
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['needs-review-accounts'] });
+      toast({ title: `${ids.length} leads sent to review` });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Bulk review failed', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useBulkRejectLeads() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ leadIds, reason }: { leadIds: string[]; reason: string }) => {
+      const { error } = await supabase
+        .from('lead_queue')
+        .update({
+          status: 'rejected',
+          rejected_at: new Date().toISOString(),
+          rejected_reason: reason,
+        } as any)
+        .in('id', leadIds);
+      if (error) throw error;
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user', action: 'bulk_reject', entity_type: 'lead_queue',
+          details: { lead_ids: leadIds, count: leadIds.length, reason },
+        });
+      } catch (_) {}
+    },
+    onSuccess: (_, { leadIds }) => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
+      toast({ title: `${leadIds.length} leads rejected` });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Bulk reject failed', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useBulkRestoreLeads() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (leadIds: string[]) => {
+      const { error } = await supabase
+        .from('lead_queue')
+        .update({ claim_status: 'new', status: 'pending', rejected_reason: null, rejected_at: null } as any)
+        .in('id', leadIds);
+      if (error) throw error;
+      try {
+        await supabase.from('audit_log').insert({
+          actor: 'user', action: 'bulk_restore', entity_type: 'lead_queue',
+          details: { lead_ids: leadIds, count: leadIds.length },
+        });
+      } catch (_) {}
+    },
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
+      toast({ title: `${ids.length} leads restored to queue` });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Bulk restore failed', description: err.message, variant: 'destructive' });
+    },
+  });
+}
