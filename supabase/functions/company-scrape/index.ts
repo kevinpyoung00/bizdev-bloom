@@ -23,6 +23,20 @@ Deno.serve(async (req) => {
     let formattedUrl = website?.trim() || "";
 
     // Step 0: If no website provided but company name given, discover it via Firecrawl search
+    // Domains Firecrawl cannot scrape
+    const BLOCKED_DOMAINS = [
+      "facebook.com", "fb.com", "instagram.com", "twitter.com", "x.com",
+      "tiktok.com", "linkedin.com", "youtube.com", "reddit.com", "pinterest.com",
+      "yelp.com", "glassdoor.com", "indeed.com", "craigslist.org",
+    ];
+
+    const isBlockedUrl = (url: string): boolean => {
+      try {
+        const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace(/^www\./, "");
+        return BLOCKED_DOMAINS.some(d => host === d || host.endsWith(`.${d}`));
+      } catch { return false; }
+    };
+
     if (!formattedUrl && company) {
       console.log("No website provided — searching for:", company);
       const searchResp = await fetch("https://api.firecrawl.dev/v1/search", {
@@ -33,14 +47,19 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           query: `${company} official website`,
-          limit: 3,
+          limit: 5,
         }),
       });
       const searchData = await searchResp.json();
       if (searchResp.ok && searchData.data?.length > 0) {
-        // Pick the first result URL as the company website
-        formattedUrl = searchData.data[0].url || "";
-        console.log("Discovered website:", formattedUrl);
+        // Pick the first non-blocked result URL
+        const validResult = searchData.data.find((r: any) => r.url && !isBlockedUrl(r.url));
+        if (validResult) {
+          formattedUrl = validResult.url;
+          console.log("Discovered website:", formattedUrl);
+        } else {
+          console.warn("All discovered URLs are blocked social media sites");
+        }
       }
     }
 
@@ -75,9 +94,12 @@ Deno.serve(async (req) => {
 
     if (!scrapeResp.ok) {
       console.error("Firecrawl error:", scrapeData);
+      // Return 422 (not 500) for unsupported sites so callers can handle gracefully
+      const errMsg = scrapeData.error || "Failed to scrape website";
+      const isUnsupported = typeof errMsg === "string" && (errMsg.includes("do not support") || errMsg.includes("blocked"));
       return new Response(
-        JSON.stringify({ success: false, error: scrapeData.error || "Failed to scrape website" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ success: false, error: isUnsupported ? `Site not supported by scraper: ${formattedUrl}` : errMsg }),
+        { status: isUnsupported ? 422 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
