@@ -91,17 +91,19 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
     toast.success(`Copied '${searchText}' — paste in Zywave's search`);
   };
 
-  // Build lead data for drip generation
+  // Build lead data for drip generation (enrichment happens server-side)
   const buildLeadData = () => {
     const triggers = account.triggers || {};
     return {
       lead_queue_id: lead.id,
       company_name: account.name,
+      domain: (account as any).domain || account.website,
       industry_key: industryKey,
       industry_label: industryLabel,
       hq_city: account.hq_city,
       hq_state: account.hq_state,
       employee_count: account.employee_count,
+      revenue_range: (account as any).revenue_range,
       persona,
       signals: {
         funding: triggers.funding || triggers.expansion ? { stage: triggers.funding?.stage, days_ago: (triggers.funding?.months_ago || 12) * 30 } : undefined,
@@ -109,7 +111,20 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
         hr_change: triggers.recent_role_changes ? { title: Array.isArray(triggers.recent_role_changes) ? triggers.recent_role_changes[0]?.title : triggers.recent_role_changes?.title, days_ago: Array.isArray(triggers.recent_role_changes) ? triggers.recent_role_changes[0]?.days_ago : triggers.recent_role_changes?.days_ago } : undefined,
         csuite: triggers.c_suite_changes ? { role: triggers.c_suite_changes?.title || triggers.c_suite_changes?.role, days_ago: (triggers.c_suite_changes?.months_ago || 6) * 30 } : undefined,
       },
-      contact: primaryContact ? { first_name: primaryContact.first_name } : undefined,
+      contact: primaryContact ? {
+        first_name: primaryContact.first_name,
+        last_name: primaryContact.last_name,
+        title: primaryContact.title,
+        email: primaryContact.email,
+        phone: primaryContact.phone,
+        linkedin_url: primaryContact.linkedin_url,
+        department: (primaryContact as any).department,
+        seniority: (primaryContact as any).seniority,
+        location: (primaryContact as any).location,
+      } : undefined,
+      manual_notes_for_ai: (account as any).notes || undefined,
+      company_scrape: (account as any).company_scrape || undefined,
+      current_carrier: triggers.carrier_change?.current_carrier || undefined,
       reach: { email: hasEmail, phone: hasPhone, linkedin: hasLinkedIn },
     };
   };
