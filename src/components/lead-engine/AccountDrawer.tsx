@@ -299,18 +299,27 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                   )}
                   {primaryContact.phone && (() => {
                     const importLog = (primaryContact as any).import_log;
-                    const isCompanyPhone = importLog?.phone_is_company === true;
+                    // import_log is an array — check latest entry for phone_is_company
+                    const latestLog = Array.isArray(importLog) ? importLog[importLog.length - 1] : importLog;
+                    const isCompanyPhone = latestLog?.phone_is_company === true;
+                    const phonesRaw = latestLog?.phones_raw || {};
+                    // Find mobile phone from raw sources if different from canonical
+                    const mobileKey = Object.keys(phonesRaw).find(k => /mobile\s*phone/i.test(k));
+                    const mobileNumber = mobileKey ? phonesRaw[mobileKey] : null;
+                    const showMobileSeparately = mobileNumber && mobileNumber !== primaryContact.phone;
                     return (
-                      <a href={`tel:${primaryContact.phone.replace(/[^\d+]/g, '')}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
-                        <Phone size={12} /> {primaryContact.phone}{isCompanyPhone && <span className="text-muted-foreground"> (Company)</span>}
-                      </a>
+                      <>
+                        <a href={`tel:${primaryContact.phone.replace(/[^\d+]/g, '')}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                          <Phone size={12} /> {primaryContact.phone}{isCompanyPhone && <span className="text-muted-foreground"> (Company)</span>}
+                        </a>
+                        {showMobileSeparately && (
+                          <a href={`tel:${mobileNumber.replace(/[^\d+]/g, '')}`} className="text-xs text-muted-foreground flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                            <Phone size={12} /> {mobileNumber} <span className="text-[10px]">(Mobile)</span>
+                          </a>
+                        )}
+                      </>
                     );
                   })()}
-                  {(primaryContact as any).phone_mobile && (primaryContact as any).phone_mobile !== primaryContact.phone && (
-                    <a href={`tel:${(primaryContact as any).phone_mobile.replace(/[^\d+]/g, '')}`} className="text-xs text-muted-foreground flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
-                      <Phone size={12} /> {(primaryContact as any).phone_mobile} <span className="text-[10px]">(Mobile)</span>
-                    </a>
-                  )}
                   {primaryContact.linkedin_url && (
                     <a href={primaryContact.linkedin_url.startsWith('http') ? primaryContact.linkedin_url : `https://${primaryContact.linkedin_url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
                       <Linkedin size={12} /> LinkedIn

@@ -385,7 +385,8 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         const empCount = parseInt(row.employee_count) || null;
         // Final safeguard: never store LinkedIn URLs as company domain
         const cleanDomain = (row.company_domain && !LINKEDIN_URL_RE.test(row.company_domain)) ? row.company_domain : '';
-        const linkedinUrl = row.linkedin_url || (LINKEDIN_URL_RE.test(row.company_domain) ? row.company_domain : '');
+        const linkedinUrlRaw = row.linkedin_url || (LINKEDIN_URL_RE.test(row.company_domain) ? row.company_domain : '');
+        const linkedinUrl = linkedinUrlRaw ? normalizeUrl(linkedinUrlRaw).url : '';
 
         // Find existing account by domain or canonical name
         let accountId: string | null = null;
