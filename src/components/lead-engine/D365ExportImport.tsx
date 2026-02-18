@@ -376,15 +376,19 @@ export async function exportD365LeadWorkbook(leads: LeadWithAccount[], contacts:
     }
   }
 
-  // Single visible sheet — no hidden sheets, no system columns
-  const wb = XLSX.utils.book_new();
+  // Export as CSV — D365 Import Wizard handles CSV natively without hidden-sheet issues
   const ws = XLSX.utils.json_to_sheet(leadRows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Leads');
-
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-  XLSX.writeFile(wb, `D365_Lead_Import_${stamp}.xlsx`, { bookType: 'xlsx' });
+  a.download = `D365_Lead_Import_${stamp}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
   toast.success(`Exported ${leadRows.length} leads for D365 (Lead entity)`);
 
   supabase.from('audit_log').insert({
