@@ -90,7 +90,12 @@ const FIELD_LABELS: Record<string, string> = {
 const REQUIRED_FIELDS = ['first_name', 'last_name', 'company_name'];
 
 const LINKEDIN_URL_RE = /linkedin\.com/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Strip leading tick marks and clean phone numbers from CSV artifacts */
+function cleanPhone(raw: string): string {
+  return raw.replace(/^['+]+/, '').trim();
+}
 function autoMapHeaders(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const [field, re] of Object.entries(HEADER_MAP)) {
@@ -247,7 +252,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         source: e.source,
       }));
 
-      const emailPick = pickBestField(getField('email'), EMAIL_PRIORITY);
+      const emailPick = pickBestField(getField('email').filter(e => EMAIL_RE.test(e.value)), EMAIL_PRIORITY);
       const titlePick = pickBestField(getField('title'), TITLE_PRIORITY);
       const domainPick = pickBestField(getField('company_domain'), DOMAIN_PRIORITY);
       const linkedinPick = getField('linkedin_url').find(e => e.value);
@@ -322,7 +327,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         last_name: firstNonEmpty('last_name'),
         title: titlePick?.value || '',
         email: emailPick?.value || '',
-        phone: phoneResult.phone_direct,
+        phone: cleanPhone(phoneResult.phone_direct),
         phone_is_company: phoneResult.phone_is_company,
         phones_raw: phoneResult.phones_raw,
         linkedin_url: finalLinkedin,
@@ -424,12 +429,21 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
 
         // Check for existing contact by email or linkedin
         let existingContactId: string | null = null;
-        if (row.email) {
+        if (row.email && EMAIL_RE.test(row.email)) {
           const { data } = await supabase.from('contacts_le').select('id').eq('email', row.email).limit(1);
           if (data && data.length > 0) existingContactId = data[0].id;
         }
         if (!existingContactId && linkedinUrl) {
           const { data } = await supabase.from('contacts_le').select('id').eq('linkedin_url', linkedinUrl).limit(1);
+          if (data && data.length > 0) existingContactId = data[0].id;
+        }
+        // Fallback: match by first_name + last_name + account_id to prevent duplicates
+        if (!existingContactId && accountId && row.first_name && row.last_name) {
+          const { data } = await supabase.from('contacts_le').select('id')
+            .eq('account_id', accountId)
+            .eq('first_name', row.first_name)
+            .eq('last_name', row.last_name)
+            .limit(1);
           if (data && data.length > 0) existingContactId = data[0].id;
         }
 
@@ -447,7 +461,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           // Update existing contact with better data
           const updatePayload: any = {
             title: row.title || undefined,
-            email: row.email || undefined,
+            email: (row.email && EMAIL_RE.test(row.email)) ? row.email : undefined,
             phone: row.phone || undefined,
             linkedin_url: linkedinUrl || undefined,
             account_id: accountId,
@@ -460,11 +474,12 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           await supabase.from('contacts_le').update(updatePayload).eq('id', existingContactId);
           mergeCount++;
         } else {
+          const validEmail = (row.email && EMAIL_RE.test(row.email)) ? row.email : null;
           const insertPayload: any = {
             first_name: row.first_name || 'Unknown',
             last_name: row.last_name || '',
             title: row.title || null,
-            email: row.email || null,
+            email: validEmail,
             phone: row.phone || null,
             linkedin_url: linkedinUrl || null,
             account_id: accountId,
