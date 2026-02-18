@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Loader2, RotateCcw, ExternalLink, Search, CheckCircle2, X, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
+import type { BatchMeta } from '@/lib/batchLabel';
+import BatchChip from './BatchChip';
 
 // D365 deep link helper
 function findInD365Url(query: string) {
@@ -16,7 +18,11 @@ function findInD365Url(query: string) {
   return `https://org.crm.dynamics.com/main.aspx?pagetype=search&searchText=${q}`;
 }
 
-export default function NeedsReviewTab() {
+interface NeedsReviewTabProps {
+  batches?: BatchMeta[];
+}
+
+export default function NeedsReviewTab({ batches = [] }: NeedsReviewTabProps) {
   const queryClient = useQueryClient();
   const reviewEnabled = useFeatureFlag('bizdev_review');
 
@@ -41,7 +47,7 @@ export default function NeedsReviewTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contacts_le')
-        .select('id, first_name, last_name, email, title, phone, linkedin_url, account_id, crm_guid, crm_record_url, crm_status, accounts(name, domain)')
+        .select('id, first_name, last_name, email, title, phone, linkedin_url, account_id, crm_guid, crm_record_url, crm_status, batch_id, accounts(name, domain)')
         .eq('crm_status', 'needs_review')
         .order('first_name');
       if (error) throw error;
@@ -140,6 +146,7 @@ export default function NeedsReviewTab() {
                   <TableHead>Company</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Title</TableHead>
+                  <TableHead className="w-28">Batch</TableHead>
                   <TableHead>D365 Link</TableHead>
                   <TableHead className="w-52">Actions</TableHead>
                 </TableRow>
@@ -148,6 +155,7 @@ export default function NeedsReviewTab() {
                 {reviewContacts.map((c: any) => {
                   const companyName = c.accounts?.name || '—';
                   const searchQuery = c.email || `${c.first_name} ${c.last_name}`;
+                  const batchMeta = c.batch_id ? batches.find(b => b.batch_id === c.batch_id) : null;
                   return (
                     <TableRow key={c.id}>
                       <TableCell>
@@ -156,6 +164,9 @@ export default function NeedsReviewTab() {
                       <TableCell className="text-xs text-muted-foreground">{companyName}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{c.email || '—'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{c.title || '—'}</TableCell>
+                      <TableCell>
+                        {batchMeta ? <BatchChip batch={batchMeta} /> : <span className="text-[10px] text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell>
                         {c.crm_record_url ? (
                           <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" asChild>
