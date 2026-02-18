@@ -75,9 +75,16 @@ export function exportD365CheckCSV(leads: LeadWithAccount[]) {
     'Number of Employees': l.account.employee_count || '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Accounts');
-  XLSX.writeFile(wb, `d365-check-${new Date().toISOString().split('T')[0]}.xlsx`, { bookType: 'xlsx' });
+  const csv = XLSX.utils.sheet_to_csv(ws, { RS: '\r\n' });
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `d365-check-${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
   toast.success(`Exported ${rows.length} companies for D365 check`);
   supabase.from('audit_log').insert({
     actor: 'user', action: 'export_d365_check', entity_type: 'accounts', details: { count: rows.length },
