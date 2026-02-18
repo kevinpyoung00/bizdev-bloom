@@ -325,83 +325,66 @@ export async function exportD365LeadWorkbook(leads: LeadWithAccount[], contacts:
     contactsByAccount.get(c.account_id)!.push(c);
   }
 
-  const leadRows: any[] = [];
+  const leadRows: Record<string, string>[] = [];
   for (const lead of leads) {
     const acctContacts = contactsByAccount.get(lead.account.id) || [];
     const companyName = lead.account.name || '';
     const website = lead.account.website || (lead.account.domain ? `https://${lead.account.domain}` : '');
     const industry = lead.account.industry || '';
     const notes = lead.account.notes || '';
+    const city = lead.account.hq_city || '';
+    const state = lead.account.hq_state || '';
 
     if (acctContacts.length === 0) {
       leadRows.push({
         'First Name': '',
-        'Last Name': '',
-        'Name': companyName,
-        'Notes': notes,
-        'Status Reason': '',
-        'Created On': '',
+        'Last Name': companyName,
         'Email Address': '',
         'Business Phone': '',
         'Company': companyName,
         'Website': website,
         'Industry': industry,
+        'City': city,
+        'State': state,
+        'Description': notes,
       });
     } else {
       for (const c of acctContacts) {
-        const firstName = c.first_name || '';
-        const lastName = c.last_name || '';
-        const composedName = `${firstName} ${lastName}`.trim() + (companyName ? ` – ${companyName}` : '');
+        // Use phone_direct from import_log if available
+        let phoneDirect = c.phone || '';
+        const importLog = Array.isArray(c.import_log) ? c.import_log : [];
+        for (const entry of importLog) {
+          if (entry && typeof entry === 'object' && entry.phone_direct) {
+            phoneDirect = entry.phone_direct;
+            break;
+          }
+        }
+
         leadRows.push({
-          'First Name': firstName,
-          'Last Name': lastName,
-          'Name': composedName,
-          'Notes': notes,
-          'Status Reason': '',
-          'Created On': '',
+          'First Name': c.first_name || '',
+          'Last Name': c.last_name || '',
           'Email Address': c.email || '',
-          'Business Phone': c.phone || '',
+          'Business Phone': phoneDirect,
           'Company': companyName,
           'Website': website,
           'Industry': industry,
+          'City': city,
+          'State': state,
+          'Description': notes,
         });
       }
     }
   }
 
+  // Single visible sheet — no hidden sheets, no system columns
   const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(leadRows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Leads');
 
-  // Visible "Leads" sheet
-  const wsLeads = XLSX.utils.json_to_sheet(leadRows);
-  XLSX.utils.book_append_sheet(wb, wsLeads, 'Leads');
-
-  // Hidden "mappingInfo" sheet for support reference
-  const mappingRows = [
-    { 'Source Field': 'first_name', 'D365 Field': 'First Name', 'Notes': 'From contacts_le' },
-    { 'Source Field': 'last_name', 'D365 Field': 'Last Name', 'Notes': 'From contacts_le' },
-    { 'Source Field': 'computed', 'D365 Field': 'Name', 'Notes': 'First Last – Company' },
-    { 'Source Field': 'notes', 'D365 Field': 'Notes', 'Notes': 'From accounts.notes' },
-    { 'Source Field': 'n/a', 'D365 Field': 'Status Reason', 'Notes': 'Left blank for create' },
-    { 'Source Field': 'n/a', 'D365 Field': 'Created On', 'Notes': 'Left blank for create' },
-    { 'Source Field': 'email', 'D365 Field': 'Email Address', 'Notes': 'From contacts_le' },
-    { 'Source Field': 'phone', 'D365 Field': 'Business Phone', 'Notes': 'From contacts_le (canonical phone_direct)' },
-    { 'Source Field': 'name', 'D365 Field': 'Company', 'Notes': 'From accounts.name' },
-    { 'Source Field': 'website', 'D365 Field': 'Website', 'Notes': 'Normalized URL' },
-    { 'Source Field': 'industry', 'D365 Field': 'Industry', 'Notes': 'Canonical industry' },
-  ];
-  const wsMapping = XLSX.utils.json_to_sheet(mappingRows);
-  XLSX.utils.book_append_sheet(wb, wsMapping, 'mappingInfo');
-
-  // Hide the mappingInfo sheet
-  if (!wb.Workbook) wb.Workbook = {};
-  if (!wb.Workbook.Sheets) wb.Workbook.Sheets = [];
-  wb.Workbook.Sheets = [
-    { Hidden: 0, name: 'Leads' },
-    { Hidden: 1, name: 'mappingInfo' },
-  ];
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T').join('_').substring(0, 19);
-  XLSX.writeFile(wb, `D365_Lead_Import_${timestamp}.xlsx`, { bookType: 'xlsx' });
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  XLSX.writeFile(wb, `D365_Lead_Import_${stamp}.xlsx`, { bookType: 'xlsx' });
   toast.success(`Exported ${leadRows.length} leads for D365 (Lead entity)`);
 
   supabase.from('audit_log').insert({
