@@ -1,11 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FileSpreadsheet, CheckCircle2, ArrowRight, Loader2, Plus, Trash2, AlertTriangle, Check } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Upload, FileSpreadsheet, CheckCircle2, ArrowRight, Loader2, Plus, Trash2, AlertTriangle, Check, Info, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -57,16 +58,15 @@ function detectSource(filename: string): string {
   return 'Other';
 }
 
+// Fields the user can manually map — phone and industry are AUTO-RESOLVED and excluded
 const HEADER_MAP: Record<string, RegExp> = {
   first_name: /first.?name|fname|^first$/i,
   last_name: /last.?name|lname|surname|^last$/i,
   title: /title|job.?title|position|^role$/i,
   email: /email|e-?mail/i,
-  phone: /phone|mobile|direct.?phone|work.?phone|direct.?dial|business.?phone|corporate.?phone|company.?phone/i,
   linkedin_url: /linkedin|li.?url|li.?profile|person.?linkedin|contact.?linkedin|profile.?url/i,
   company_name: /company|org|account|company.?name/i,
   company_domain: /\b(domain|website|company.?url|web|company.?website)\b/i,
-  industry: /industry|sector|primary.?industry|all.?industr|industry.?hierarchical/i,
   employee_count: /employee|emp.?count|size|headcount|number.?of.?emp/i,
   hq_city: /city|hq.?city/i,
   hq_state: /state|hq.?state|region/i,
@@ -77,11 +77,9 @@ const FIELD_LABELS: Record<string, string> = {
   last_name: 'Last Name',
   title: 'Job Title',
   email: 'Email',
-  phone: 'Phone',
   linkedin_url: 'LinkedIn URL',
   company_name: 'Company Name',
   company_domain: 'Company Domain',
-  industry: 'Industry',
   employee_count: 'Employee Count',
   hq_city: 'HQ City',
   hq_state: 'HQ State',
@@ -96,6 +94,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function cleanPhone(raw: string): string {
   return raw.replace(/^['+]+/, '').trim();
 }
+
 function autoMapHeaders(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const [field, re] of Object.entries(HEADER_MAP)) {
@@ -107,7 +106,6 @@ function autoMapHeaders(headers: string[]): Record<string, string> {
 
 // Field priority: source-based
 const EMAIL_PRIORITY = ['Apollo', 'ZoomInfo', 'Other', 'SalesNavigator', 'Zywave'];
-const PHONE_PRIORITY = ['ZoomInfo', 'Apollo', 'Other', 'SalesNavigator', 'Zywave'];
 const TITLE_PRIORITY = ['SalesNavigator', 'Apollo', 'ZoomInfo', 'Other', 'Zywave'];
 const DOMAIN_PRIORITY = ['ZoomInfo', 'Other', 'Apollo', 'SalesNavigator', 'Zywave'];
 
@@ -116,6 +114,48 @@ function pickBestField(entries: { value: string; source: string }[], priority: s
   if (nonEmpty.length === 0) return null;
   nonEmpty.sort((a, b) => priority.indexOf(a.source) - priority.indexOf(b.source));
   return nonEmpty[0];
+}
+
+/**
+ * Pre-resolve phone and industry from raw CSV rows BEFORE confirm-mapping.
+ * Returns a summary per file of what was auto-resolved.
+ */
+function preResolveFile(file: ParsedFile): { phoneSample: string; phoneHeader: string; industrySample: string; industryHeader: string } {
+  // Sample the first non-empty resolved value
+  let phoneSample = '';
+  let phoneHeader = '';
+  let industrySample = '';
+  let industryHeader = '';
+
+  for (const row of file.rows.slice(0, 20)) {
+    if (!phoneSample) {
+      const pr = resolvePhone(row, file.headers);
+      if (pr.phone_direct) {
+        phoneSample = pr.phone_direct;
+        // Find which header won
+        for (const h of file.headers) {
+          if ((row[h] || '').trim() === pr.phone_direct || cleanPhone((row[h] || '').trim()) === cleanPhone(pr.phone_direct)) {
+            phoneHeader = h;
+            break;
+          }
+        }
+      }
+    }
+    if (!industrySample) {
+      const ir = resolveIndustry(row, file.headers);
+      if (ir.industry) {
+        industrySample = ir.industry;
+        // Find which header contributed
+        for (const [k] of Object.entries(ir.industry_raw)) {
+          industryHeader = k;
+          break;
+        }
+      }
+    }
+    if (phoneSample && industrySample) break;
+  }
+
+  return { phoneSample, phoneHeader, industrySample, industryHeader };
 }
 
 type Step = 'upload' | 'mapping' | 'triggers' | 'preview' | 'importing' | 'done';
@@ -132,11 +172,11 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
   const [merged, setMerged] = useState<MergedContact[]>([]);
   const [step, setStep] = useState<Step>('upload');
   const [importResult, setImportResult] = useState<{ accounts: number; contacts: number; merged: number } | null>(null);
-  // Per-file manual header mappings: fileIndex -> { field -> csvHeader }
   const [fileMappings, setFileMappings] = useState<Record<number, Record<string, string>>>({});
-  // Batch trigger tags (manual triggers applied to entire import batch)
   const [batchTriggers, setBatchTriggers] = useState<TriggerTag[]>([]);
   const [batchId, setBatchId] = useState<string | null>(null);
+  // Debug: which row is expanded in preview
+  const [debugIdx, setDebugIdx] = useState<number | null>(null);
 
   const reset = () => {
     setFiles([]);
@@ -146,6 +186,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
     setFileMappings({});
     setBatchTriggers([]);
     setBatchId(null);
+    setDebugIdx(null);
   };
 
   const addFile = useCallback((file: File) => {
@@ -168,7 +209,6 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         const source = detectSource(file.name);
         setFiles(prev => {
           const newFiles = [...prev, { name: file.name, source, rows, headers }];
-          // Auto-map headers for this new file
           const idx = newFiles.length - 1;
           const autoMap = autoMapHeaders(headers);
           setFileMappings(prev => ({ ...prev, [idx]: autoMap }));
@@ -182,8 +222,12 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
     reader.readAsArrayBuffer(file);
   }, []);
 
+  // Pre-resolve phone & industry summaries for each file (for the mapping UI)
+  const fileResolutions = useMemo(() => {
+    return files.map(f => preResolveFile(f));
+  }, [files]);
+
   const handleShowMapping = () => {
-    // Initialize mappings for any files that don't have them yet
     const newMappings = { ...fileMappings };
     files.forEach((f, i) => {
       if (!newMappings[i]) {
@@ -205,23 +249,21 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
   };
 
   const handleMerge = () => {
-    const allRows: { row: Record<string, string>; source: string; mapping: Record<string, string> }[] = [];
+    const allRows: { row: Record<string, string>; source: string; mapping: Record<string, string>; rawHeaders: string[] }[] = [];
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const mapping = fileMappings[i] || autoMapHeaders(f.headers);
-      // Filter out empty mappings
       const cleanMapping: Record<string, string> = {};
       for (const [k, v] of Object.entries(mapping)) {
         if (v) cleanMapping[k] = v;
       }
       for (const row of f.rows) {
-        allRows.push({ row, source: f.source, mapping: cleanMapping });
+        allRows.push({ row, source: f.source, mapping: cleanMapping, rawHeaders: f.headers });
       }
     }
 
-    // Group by merge key: email > linkedin > (company_domain + canonical)
+    // Group by merge key
     const byKey = new Map<string, { entries: typeof allRows }>();
-
     for (const item of allRows) {
       const m = item.mapping;
       const email = (m.email ? item.row[m.email] : '').trim().toLowerCase();
@@ -269,29 +311,25 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         return '';
       };
 
-      // ── Phone: ordered header priority across all raw rows ──
+      // ── Phone: resolve from RAW headers using priority list. LOCKED — confirm-mapping cannot override. ──
       let phoneResult: PhoneResult = { phone_direct: '', phone_is_company: false, phones_raw: {} };
       for (const entry of group.entries) {
-        const pr = resolvePhone(entry.row, entry.row ? Object.keys(entry.row) : []);
+        const pr = resolvePhone(entry.row, entry.rawHeaders);
         // Merge raw debug values
         for (const [k, v] of Object.entries(pr.phones_raw)) {
           phoneResult.phones_raw[`${entry.source}:${k}`] = v;
         }
+        // First resolved phone wins (priority order is inside resolvePhone)
         if (!phoneResult.phone_direct && pr.phone_direct) {
           phoneResult = { ...pr, phones_raw: phoneResult.phones_raw };
         }
       }
-      // Fallback to old mapped phone if resolvePhone found nothing
-      const oldPhonePick = pickBestField(getField('phone'), PHONE_PRIORITY);
-      if (!phoneResult.phone_direct && oldPhonePick?.value) {
-        phoneResult.phone_direct = oldPhonePick.value;
-      }
       if (phoneResult.phone_direct) fields_merged.phone = 'priority_resolved';
 
-      // ── Industry: ordered header priority across all raw rows ──
+      // ── Industry: resolve from RAW headers using priority list. LOCKED. ──
       let industryResult: IndustryResult = { industry: '', industry_raw: {} };
       for (const entry of group.entries) {
-        const ir = resolveIndustry(entry.row, Object.keys(entry.row));
+        const ir = resolveIndustry(entry.row, entry.rawHeaders);
         for (const [k, v] of Object.entries(ir.industry_raw)) {
           industryResult.industry_raw[`${entry.source}:${k}`] = v;
         }
@@ -299,12 +337,8 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           industryResult = { ...ir, industry_raw: industryResult.industry_raw };
         }
       }
-      // Fallback to old first-non-empty
-      if (!industryResult.industry) {
-        industryResult.industry = firstNonEmpty('industry');
-      }
 
-      // Sanitize: if company_domain looks like a LinkedIn URL, move it to linkedin_url
+      // Sanitize: if company_domain looks like a LinkedIn URL, move it
       let finalDomain = domainPick?.value || '';
       let finalLinkedin = linkedinPick?.value || '';
       if (LINKEDIN_URL_RE.test(finalDomain)) {
@@ -345,7 +379,6 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
     }
 
     setMerged(results);
-    // If triggers feature is enabled, show trigger tagging before preview
     if (triggersEnabled) {
       setStep('triggers');
     } else {
@@ -355,7 +388,6 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
 
   const handleTriggersSave = async (tags: TriggerTag[]) => {
     setBatchTriggers(tags);
-    // Create a batch record in the database
     const campaignBatchId = `batch-${Date.now()}`;
     const sourceBatchId = files.map(f => f.name).join('+');
     try {
@@ -368,7 +400,6 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
       setBatchId((data as any).batch_id);
     } catch (err: any) {
       console.error('Batch creation error:', err);
-      // Continue without batch — non-blocking
     }
     setStep('preview');
   };
@@ -383,7 +414,6 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
       for (const row of merged) {
         const canonical = canonicalCompanyName(row.company_name);
         const empCount = parseInt(row.employee_count) || null;
-        // Final safeguard: never store LinkedIn URLs as company domain
         const cleanDomain = (row.company_domain && !LINKEDIN_URL_RE.test(row.company_domain)) ? row.company_domain : '';
         const linkedinUrlRaw = row.linkedin_url || (LINKEDIN_URL_RE.test(row.company_domain) ? row.company_domain : '');
         const linkedinUrl = linkedinUrlRaw ? normalizeUrl(linkedinUrlRaw).url : '';
@@ -418,17 +448,15 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           accountId = data.id;
           accountCount++;
         } else {
-          // If merging into existing account from Apollo-only, update status
           const isApolloOnly = files.every(f => f.source === 'Apollo' || f.source === 'Other');
           if (isApolloOnly) {
             await supabase.from('accounts').update({ status: 'waiting_for_zoominfo' } as any).eq('id', accountId);
           }
         }
 
-        // Skip contact if no name
         if (!row.first_name && !row.last_name) continue;
 
-        // Check for existing contact by email or linkedin
+        // Check for existing contact
         let existingContactId: string | null = null;
         if (row.email && EMAIL_RE.test(row.email)) {
           const { data } = await supabase.from('contacts_le').select('id').eq('email', row.email).limit(1);
@@ -438,7 +466,6 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           const { data } = await supabase.from('contacts_le').select('id').eq('linkedin_url', linkedinUrl).limit(1);
           if (data && data.length > 0) existingContactId = data[0].id;
         }
-        // Fallback: match by first_name + last_name + account_id to prevent duplicates
         if (!existingContactId && accountId && row.first_name && row.last_name) {
           const { data } = await supabase.from('contacts_le').select('id')
             .eq('account_id', accountId)
@@ -459,13 +486,14 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         };
 
         if (existingContactId) {
-          // Update existing contact with better data
           const updatePayload: any = {
             title: row.title || undefined,
             email: (row.email && EMAIL_RE.test(row.email)) ? row.email : undefined,
+            // phone_direct is LOCKED from resolver — always persist
             phone: row.phone || undefined,
             linkedin_url: linkedinUrl || undefined,
             account_id: accountId,
+            import_log: [importLogEntry],
           };
           if (batchId) {
             updatePayload.batch_id = batchId;
@@ -584,13 +612,14 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         {step === 'mapping' && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Review how your CSV columns map to contact fields. Fix any <span className="text-destructive font-medium">unmapped</span> fields below.
+              Review how your CSV columns map to contact fields. <strong>Phone</strong> and <strong>Industry</strong> are auto-resolved from raw headers and cannot be overridden.
             </p>
 
             {files.map((f, fileIdx) => {
               const mapping = fileMappings[fileIdx] || {};
               const unmappedHeaders = f.headers.filter(h => !Object.values(mapping).includes(h));
               const missingRequired = REQUIRED_FIELDS.filter(field => !mapping[field]);
+              const resolution = fileResolutions[fileIdx];
 
               return (
                 <div key={fileIdx} className="border border-border rounded-lg p-4 space-y-3">
@@ -607,6 +636,36 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                       Missing required: {missingRequired.map(f => FIELD_LABELS[f]).join(', ')}
                     </div>
                   )}
+
+                  {/* Auto-resolved fields: Phone & Industry (read-only, locked) */}
+                  <div className="bg-muted/40 border border-border rounded-md p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <Lock size={11} className="text-primary" /> Auto-Resolved Fields
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-20 shrink-0">Phone:</span>
+                        <span className="text-xs text-foreground font-mono">
+                          {resolution?.phoneSample
+                            ? <>{resolution.phoneSample} <span className="text-muted-foreground">← {resolution.phoneHeader}</span></>
+                            : <span className="text-muted-foreground italic">No phone columns detected</span>
+                          }
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-20 shrink-0">Industry:</span>
+                        <span className="text-xs text-foreground font-mono">
+                          {resolution?.industrySample
+                            ? <>{resolution.industrySample} <span className="text-muted-foreground">← {resolution.industryHeader}</span></>
+                            : <span className="text-muted-foreground italic">No industry columns detected</span>
+                          }
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Phone priority: Mobile → Work Direct → Direct Phone → Direct Dials → Business → Corporate → Company. Industry priority: Industry → Primary Industry → All Industries → Hierarchical Category.
+                    </p>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     {Object.keys(FIELD_LABELS).map(field => {
@@ -685,6 +744,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{merged.length}</span> unique contacts/companies after deduplication from {files.length} files.
+              <span className="text-[10px] ml-2 text-muted-foreground">Click a row to see debug info (phones_raw, industry_raw).</span>
             </p>
 
             {batchTriggers.length > 0 && (
@@ -697,46 +757,112 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             )}
 
             <div className="overflow-x-auto border border-border rounded max-h-[400px]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                     <TableHead className="text-xs">Name</TableHead>
-                     <TableHead className="text-xs">Company</TableHead>
-                     <TableHead className="text-xs">Title</TableHead>
-                     <TableHead className="text-xs">Email</TableHead>
-                     <TableHead className="text-xs">Phone</TableHead>
-                     <TableHead className="text-xs">Industry</TableHead>
-                     <TableHead className="text-xs">LinkedIn</TableHead>
-                     <TableHead className="text-xs">Sources</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {merged.slice(0, 50).map((m, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="text-xs">{m.first_name} {m.last_name}</TableCell>
-                      <TableCell className="text-xs">{m.company_name}</TableCell>
-                      <TableCell className="text-xs">{m.title || '—'}</TableCell>
-                      <TableCell className="text-xs">{m.email || '—'}</TableCell>
-                      <TableCell className="text-xs">
-                        {m.phone ? (
-                          <span>{m.phone}{m.phone_is_company && <span className="text-muted-foreground ml-1">(Company)</span>}</span>
-                        ) : '—'}
-                      </TableCell>
-                      <TableCell className="text-xs">{m.industry || '—'}</TableCell>
-                      <TableCell className="text-xs">
-                        {m.linkedin_url ? (
-                          <>✓{m.invalid_urls.linkedin_url && <span className="text-destructive ml-1" title={`Invalid source URL (kept raw): ${m.invalid_urls.linkedin_url}`}>!</span>}</>
-                        ) : '—'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {m._sources.map(s => <Badge key={s} variant="outline" className="text-[9px]">{s}</Badge>)}
-                        </div>
-                      </TableCell>
+              <TooltipProvider>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                       <TableHead className="text-xs">Name</TableHead>
+                       <TableHead className="text-xs">Company</TableHead>
+                       <TableHead className="text-xs">Title</TableHead>
+                       <TableHead className="text-xs">Email</TableHead>
+                       <TableHead className="text-xs">Phone</TableHead>
+                       <TableHead className="text-xs">Industry</TableHead>
+                       <TableHead className="text-xs">LinkedIn</TableHead>
+                       <TableHead className="text-xs">Sources</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {merged.slice(0, 50).map((m, i) => (
+                      <>
+                        <TableRow key={i} className="cursor-pointer hover:bg-muted/40" onClick={() => setDebugIdx(debugIdx === i ? null : i)}>
+                          <TableCell className="text-xs">{m.first_name} {m.last_name}</TableCell>
+                          <TableCell className="text-xs">{m.company_name}</TableCell>
+                          <TableCell className="text-xs">{m.title || '—'}</TableCell>
+                          <TableCell className="text-xs">{m.email || '—'}</TableCell>
+                          <TableCell className="text-xs">
+                            {m.phone ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-help border-b border-dotted border-muted-foreground">
+                                    {m.phone}{m.phone_is_company && <span className="text-muted-foreground ml-1">(Company)</span>}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs">
+                                  <p className="font-medium text-xs mb-1">phones_raw:</p>
+                                  {Object.entries(m.phones_raw).map(([k, v]) => (
+                                    <p key={k} className="text-[10px]">{k}: {v}</p>
+                                  ))}
+                                  {Object.keys(m.phones_raw).length === 0 && <p className="text-[10px] text-muted-foreground">No raw phone data</p>}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {m.industry ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-help border-b border-dotted border-muted-foreground">{m.industry}</span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs">
+                                  <p className="font-medium text-xs mb-1">industry_raw:</p>
+                                  {Object.entries(m.industry_raw).map(([k, v]) => (
+                                    <p key={k} className="text-[10px]">{k}: {v}</p>
+                                  ))}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {m.linkedin_url ? (
+                              <>✓{m.invalid_urls.linkedin_url && <span className="text-destructive ml-1" title={`Invalid source URL (kept raw): ${m.invalid_urls.linkedin_url}`}>!</span>}</>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              {m._sources.map(s => <Badge key={s} variant="outline" className="text-[9px]">{s}</Badge>)}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {debugIdx === i && (
+                          <TableRow key={`debug-${i}`}>
+                            <TableCell colSpan={8} className="bg-muted/30 p-3">
+                              <div className="grid grid-cols-2 gap-4 text-[10px] font-mono">
+                                <div>
+                                  <p className="font-medium text-xs mb-1 text-foreground">📞 phones_raw</p>
+                                  {Object.entries(m.phones_raw).length > 0 ? (
+                                    Object.entries(m.phones_raw).map(([k, v]) => (
+                                      <p key={k} className="text-muted-foreground">{k}: <span className="text-foreground">{v}</span></p>
+                                    ))
+                                  ) : <p className="text-muted-foreground italic">empty</p>}
+                                  <p className="mt-1 text-muted-foreground">phone_is_company: <span className="text-foreground">{String(m.phone_is_company)}</span></p>
+                                  <p className="text-muted-foreground">canonical phone: <span className="text-foreground">{m.phone || '(none)'}</span></p>
+                                </div>
+                                <div>
+                                  <p className="font-medium text-xs mb-1 text-foreground">🏭 industry_raw</p>
+                                  {Object.entries(m.industry_raw).length > 0 ? (
+                                    Object.entries(m.industry_raw).map(([k, v]) => (
+                                      <p key={k} className="text-muted-foreground">{k}: <span className="text-foreground">{v}</span></p>
+                                    ))
+                                  ) : <p className="text-muted-foreground italic">empty</p>}
+                                  <p className="mt-1 text-muted-foreground">canonical industry: <span className="text-foreground">{m.industry || '(none)'}</span></p>
+                                </div>
+                              </div>
+                              {Object.keys(m.invalid_urls).length > 0 && (
+                                <div className="mt-2">
+                                  <p className="font-medium text-xs mb-1 text-foreground">⚠️ invalid_urls</p>
+                                  {Object.entries(m.invalid_urls).map(([k, v]) => (
+                                    <p key={k} className="text-[10px] text-muted-foreground">{k}: {v}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TooltipProvider>
             </div>
 
             <div className="flex justify-end gap-2">
