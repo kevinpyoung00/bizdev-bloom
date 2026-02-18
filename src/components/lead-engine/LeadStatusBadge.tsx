@@ -8,6 +8,7 @@ const statusStyles: Record<ClaimStatus, string> = {
   uploaded: 'bg-info/15 text-info border-info/30',
   in_campaign: 'bg-success/15 text-success border-success/30',
   rejected: 'bg-destructive/15 text-destructive border-destructive/30',
+  waiting_for_zoominfo: 'bg-accent text-accent-foreground border-accent',
 };
 
 export default function LeadStatusBadge({ status }: { status: string }) {

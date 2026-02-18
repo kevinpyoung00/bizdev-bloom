@@ -344,6 +344,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         }
 
         if (!accountId) {
+          const isApolloOnly = files.every(f => f.source === 'Apollo' || f.source === 'Other');
           const { data, error } = await supabase.from('accounts').insert({
             name: row.company_name,
             domain: cleanDomain || null,
@@ -352,11 +353,18 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             employee_count: empCount,
             hq_city: row.hq_city || null,
             hq_state: row.hq_state || null,
+            status: isApolloOnly ? 'waiting_for_zoominfo' : 'new',
             merge_keys: { domain: cleanDomain || undefined, canonical },
           } as any).select('id').single();
           if (error) { console.error('Account insert error:', error); continue; }
           accountId = data.id;
           accountCount++;
+        } else {
+          // If merging into existing account from Apollo-only, update status
+          const isApolloOnly = files.every(f => f.source === 'Apollo' || f.source === 'Other');
+          if (isApolloOnly) {
+            await supabase.from('accounts').update({ status: 'waiting_for_zoominfo' } as any).eq('id', accountId);
+          }
         }
 
         // Skip contact if no name
