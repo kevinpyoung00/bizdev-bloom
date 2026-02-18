@@ -298,10 +298,12 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     </a>
                   )}
                   {primaryContact.phone && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {primaryContact.phone}</span>
+                    <a href={`tel:${primaryContact.phone.replace(/[^\d+]/g, '')}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                      <Phone size={12} /> {primaryContact.phone}
+                    </a>
                   )}
                   {primaryContact.linkedin_url && (
-                    <a href={primaryContact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                    <a href={primaryContact.linkedin_url.startsWith('http') ? primaryContact.linkedin_url : `https://${primaryContact.linkedin_url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
                       <Linkedin size={12} /> LinkedIn
                     </a>
                   )}
