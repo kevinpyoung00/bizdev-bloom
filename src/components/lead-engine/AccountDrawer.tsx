@@ -297,9 +297,18 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                       <Mail size={12} /> {primaryContact.email}
                     </a>
                   )}
-                  {primaryContact.phone && (
-                    <a href={`tel:${primaryContact.phone.replace(/[^\d+]/g, '')}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
-                      <Phone size={12} /> {primaryContact.phone}
+                  {primaryContact.phone && (() => {
+                    const importLog = (primaryContact as any).import_log;
+                    const isCompanyPhone = importLog?.phone_is_company === true;
+                    return (
+                      <a href={`tel:${primaryContact.phone.replace(/[^\d+]/g, '')}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                        <Phone size={12} /> {primaryContact.phone}{isCompanyPhone && <span className="text-muted-foreground"> (Company)</span>}
+                      </a>
+                    );
+                  })()}
+                  {(primaryContact as any).phone_mobile && (primaryContact as any).phone_mobile !== primaryContact.phone && (
+                    <a href={`tel:${(primaryContact as any).phone_mobile.replace(/[^\d+]/g, '')}`} className="text-xs text-muted-foreground flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                      <Phone size={12} /> {(primaryContact as any).phone_mobile} <span className="text-[10px]">(Mobile)</span>
                     </a>
                   )}
                   {primaryContact.linkedin_url && (

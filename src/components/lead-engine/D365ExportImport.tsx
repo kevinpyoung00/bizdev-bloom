@@ -313,6 +313,104 @@ export function ImportD365Success({ open, onOpenChange }: ImportD365SuccessProps
   );
 }
 
+// ── D365 Lead Exporter (single "Leads" sheet for create-mode import) ──
+
+export async function exportD365LeadWorkbook(leads: LeadWithAccount[], contacts: any[]) {
+  if (leads.length === 0) { toast.info('No leads to export'); return; }
+
+  const contactsByAccount = new Map<string, any[]>();
+  for (const c of contacts) {
+    if (!c.account_id) continue;
+    if (!contactsByAccount.has(c.account_id)) contactsByAccount.set(c.account_id, []);
+    contactsByAccount.get(c.account_id)!.push(c);
+  }
+
+  const leadRows: any[] = [];
+  for (const lead of leads) {
+    const acctContacts = contactsByAccount.get(lead.account.id) || [];
+    const companyName = lead.account.name || '';
+    const website = lead.account.website || (lead.account.domain ? `https://${lead.account.domain}` : '');
+    const industry = lead.account.industry || '';
+    const notes = lead.account.notes || '';
+
+    if (acctContacts.length === 0) {
+      leadRows.push({
+        'First Name': '',
+        'Last Name': '',
+        'Name': companyName,
+        'Notes': notes,
+        'Status Reason': '',
+        'Created On': '',
+        'Email Address': '',
+        'Business Phone': '',
+        'Company': companyName,
+        'Website': website,
+        'Industry': industry,
+      });
+    } else {
+      for (const c of acctContacts) {
+        const firstName = c.first_name || '';
+        const lastName = c.last_name || '';
+        const composedName = `${firstName} ${lastName}`.trim() + (companyName ? ` – ${companyName}` : '');
+        leadRows.push({
+          'First Name': firstName,
+          'Last Name': lastName,
+          'Name': composedName,
+          'Notes': notes,
+          'Status Reason': '',
+          'Created On': '',
+          'Email Address': c.email || '',
+          'Business Phone': c.phone || '',
+          'Company': companyName,
+          'Website': website,
+          'Industry': industry,
+        });
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // Visible "Leads" sheet
+  const wsLeads = XLSX.utils.json_to_sheet(leadRows);
+  XLSX.utils.book_append_sheet(wb, wsLeads, 'Leads');
+
+  // Hidden "mappingInfo" sheet for support reference
+  const mappingRows = [
+    { 'Source Field': 'first_name', 'D365 Field': 'First Name', 'Notes': 'From contacts_le' },
+    { 'Source Field': 'last_name', 'D365 Field': 'Last Name', 'Notes': 'From contacts_le' },
+    { 'Source Field': 'computed', 'D365 Field': 'Name', 'Notes': 'First Last – Company' },
+    { 'Source Field': 'notes', 'D365 Field': 'Notes', 'Notes': 'From accounts.notes' },
+    { 'Source Field': 'n/a', 'D365 Field': 'Status Reason', 'Notes': 'Left blank for create' },
+    { 'Source Field': 'n/a', 'D365 Field': 'Created On', 'Notes': 'Left blank for create' },
+    { 'Source Field': 'email', 'D365 Field': 'Email Address', 'Notes': 'From contacts_le' },
+    { 'Source Field': 'phone', 'D365 Field': 'Business Phone', 'Notes': 'From contacts_le (canonical phone_direct)' },
+    { 'Source Field': 'name', 'D365 Field': 'Company', 'Notes': 'From accounts.name' },
+    { 'Source Field': 'website', 'D365 Field': 'Website', 'Notes': 'Normalized URL' },
+    { 'Source Field': 'industry', 'D365 Field': 'Industry', 'Notes': 'Canonical industry' },
+  ];
+  const wsMapping = XLSX.utils.json_to_sheet(mappingRows);
+  XLSX.utils.book_append_sheet(wb, wsMapping, 'mappingInfo');
+
+  // Hide the mappingInfo sheet
+  if (!wb.Workbook) wb.Workbook = {};
+  if (!wb.Workbook.Sheets) wb.Workbook.Sheets = [];
+  wb.Workbook.Sheets = [
+    { Hidden: 0, name: 'Leads' },
+    { Hidden: 1, name: 'mappingInfo' },
+  ];
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T').join('_').substring(0, 19);
+  XLSX.writeFile(wb, `D365_Lead_Import_${timestamp}.xlsx`, { bookType: 'xlsx' });
+  toast.success(`Exported ${leadRows.length} leads for D365 (Lead entity)`);
+
+  supabase.from('audit_log').insert({
+    actor: 'user', action: 'export_d365_lead_workbook',
+    entity_type: 'leads',
+    details: { leads: leadRows.length, accounts: leads.length },
+  });
+}
+
 // ── Shared drop zone ──
 
 function DropZone({ processing, onFile }: { processing: boolean; onFile: (f: File) => void }) {
