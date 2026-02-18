@@ -29,6 +29,7 @@ interface MergedContact {
   title: string;
   email: string;
   phone: string;
+  phone_source: string;
   phone_is_company: boolean;
   phones_raw: Record<string, string>;
   linkedin_url: string;
@@ -40,6 +41,8 @@ interface MergedContact {
   hq_city: string;
   hq_state: string;
   invalid_urls: Record<string, string>;
+  zoominfo_contact_url: string;
+  zoominfo_company_url: string;
   _sources: string[];
   _fields_merged: Record<string, string>;
 }
@@ -312,7 +315,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
       };
 
       // ── Phone: resolve from RAW headers using priority list. LOCKED — confirm-mapping cannot override. ──
-      let phoneResult: PhoneResult = { phone_direct: '', phone_is_company: false, phones_raw: {} };
+      let phoneResult: PhoneResult = { phone_direct: '', phone_source: '', phone_is_company: false, phones_raw: {} };
       for (const entry of group.entries) {
         const pr = resolvePhone(entry.row, entry.rawHeaders);
         // Merge raw debug values
@@ -356,12 +359,35 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
       finalDomain = domNorm.url;
       if (domNorm.invalid_url_raw) invalid_urls.company_domain = domNorm.invalid_url_raw;
 
+      // ── ZoomInfo profile URLs ──
+      const ZOOMINFO_CONTACT_RE = /zoominfo\s*contact\s*profile\s*url/i;
+      const ZOOMINFO_COMPANY_RE = /zoominfo\s*company\s*profile\s*url/i;
+      let zoominfo_contact_url = '';
+      let zoominfo_company_url = '';
+      for (const entry of group.entries) {
+        if (!zoominfo_contact_url) {
+          const h = entry.rawHeaders.find(h => ZOOMINFO_CONTACT_RE.test(h));
+          if (h) {
+            const v = (entry.row[h] || '').trim();
+            if (v) zoominfo_contact_url = normalizeUrl(v).url;
+          }
+        }
+        if (!zoominfo_company_url) {
+          const h = entry.rawHeaders.find(h => ZOOMINFO_COMPANY_RE.test(h));
+          if (h) {
+            const v = (entry.row[h] || '').trim();
+            if (v) zoominfo_company_url = normalizeUrl(v).url;
+          }
+        }
+      }
+
       results.push({
         first_name: firstNonEmpty('first_name'),
         last_name: firstNonEmpty('last_name'),
         title: titlePick?.value || '',
         email: emailPick?.value || '',
         phone: cleanPhone(phoneResult.phone_direct),
+        phone_source: phoneResult.phone_source,
         phone_is_company: phoneResult.phone_is_company,
         phones_raw: phoneResult.phones_raw,
         linkedin_url: finalLinkedin,
@@ -373,6 +399,8 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         hq_city: firstNonEmpty('hq_city'),
         hq_state: firstNonEmpty('hq_state'),
         invalid_urls,
+        zoominfo_contact_url,
+        zoominfo_company_url,
         _sources: sources,
         _fields_merged: fields_merged,
       });
@@ -480,8 +508,11 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           sources: row._sources,
           fields_merged: row._fields_merged,
           phones_raw: row.phones_raw,
+          phone_source: row.phone_source,
           phone_is_company: row.phone_is_company,
           industry_raw: row.industry_raw,
+          zoominfo_contact_url: row.zoominfo_contact_url || undefined,
+          zoominfo_company_url: row.zoominfo_company_url || undefined,
           invalid_urls: Object.keys(row.invalid_urls).length > 0 ? row.invalid_urls : undefined,
         };
 
@@ -834,7 +865,8 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                                       <p key={k} className="text-muted-foreground">{k}: <span className="text-foreground">{v}</span></p>
                                     ))
                                   ) : <p className="text-muted-foreground italic">empty</p>}
-                                  <p className="mt-1 text-muted-foreground">phone_is_company: <span className="text-foreground">{String(m.phone_is_company)}</span></p>
+                                  <p className="mt-1 text-muted-foreground">phone_source: <span className="text-foreground">{m.phone_source || '(none)'}</span></p>
+                                  <p className="text-muted-foreground">phone_is_company: <span className="text-foreground">{String(m.phone_is_company)}</span></p>
                                   <p className="text-muted-foreground">canonical phone: <span className="text-foreground">{m.phone || '(none)'}</span></p>
                                 </div>
                                 <div>
@@ -847,6 +879,13 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                                   <p className="mt-1 text-muted-foreground">canonical industry: <span className="text-foreground">{m.industry || '(none)'}</span></p>
                                 </div>
                               </div>
+                              {(m.zoominfo_contact_url || m.zoominfo_company_url) && (
+                                <div className="mt-2">
+                                  <p className="font-medium text-xs mb-1 text-foreground">🔍 ZoomInfo URLs</p>
+                                  {m.zoominfo_contact_url && <p className="text-muted-foreground">Person: <a href={m.zoominfo_contact_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{m.zoominfo_contact_url}</a></p>}
+                                  {m.zoominfo_company_url && <p className="text-muted-foreground">Company: <a href={m.zoominfo_company_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{m.zoominfo_company_url}</a></p>}
+                                </div>
+                              )}
                               {Object.keys(m.invalid_urls).length > 0 && (
                                 <div className="mt-2">
                                   <p className="font-medium text-xs mb-1 text-foreground">⚠️ invalid_urls</p>

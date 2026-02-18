@@ -20,6 +20,7 @@ const COMPANY_PHONE_RE = /^(corporate|company)\s*phone$/i;
 
 export interface PhoneResult {
   phone_direct: string;
+  phone_source: string;
   phone_is_company: boolean;
   phones_raw: Record<string, string>;
 }
@@ -45,6 +46,7 @@ export function resolvePhone(row: Record<string, string>, headers: string[]): Ph
       if (v) {
         return {
           phone_direct: v,
+          phone_source: header,
           phone_is_company: COMPANY_PHONE_RE.test(header),
           phones_raw,
         };
@@ -59,11 +61,11 @@ export function resolvePhone(row: Record<string, string>, headers: string[]): Ph
     const v = (row[fallback] || '').trim();
     if (v) {
       phones_raw[fallback] = v;
-      return { phone_direct: v, phone_is_company: false, phones_raw };
+      return { phone_direct: v, phone_source: fallback, phone_is_company: false, phones_raw };
     }
   }
 
-  return { phone_direct: '', phone_is_company: false, phones_raw };
+  return { phone_direct: '', phone_source: '', phone_is_company: false, phones_raw };
 }
 
 // ── B) Industry priority ────────────────────────────────────────────────
@@ -124,7 +126,7 @@ export function normalizeUrl(raw: string): UrlResult {
   if (!url) return { url: '' };
 
   // Force https
-  if (/^(www\.|linkedin\.com)/i.test(url)) {
+  if (/^(www\.|linkedin\.com|app\.zoominfo\.com)/i.test(url)) {
     url = 'https://' + url;
   }
   if (/^http:\/\//i.test(url)) {

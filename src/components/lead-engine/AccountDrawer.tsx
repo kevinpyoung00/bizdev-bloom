@@ -299,11 +299,10 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                   )}
                   {primaryContact.phone && (() => {
                     const importLog = (primaryContact as any).import_log;
-                    // import_log is an array — check latest entry for phone_is_company
                     const latestLog = Array.isArray(importLog) ? importLog[importLog.length - 1] : importLog;
-                    const isCompanyPhone = latestLog?.phone_is_company === true;
+                    const phoneSource = latestLog?.phone_source || '';
+                    const isCompanyPhone = latestLog?.phone_is_company === true || /^(corporate|company)\s*phone$/i.test(phoneSource);
                     const phonesRaw = latestLog?.phones_raw || {};
-                    // Find mobile phone from raw sources if different from canonical
                     const mobileKey = Object.keys(phonesRaw).find(k => /mobile\s*phone/i.test(k));
                     const mobileNumber = mobileKey ? phonesRaw[mobileKey] : null;
                     const showMobileSeparately = mobileNumber && mobileNumber !== primaryContact.phone;
@@ -312,12 +311,37 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                         <a href={`tel:${primaryContact.phone.replace(/[^\d+]/g, '')}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
                           <Phone size={12} /> {primaryContact.phone}{isCompanyPhone && <span className="text-muted-foreground"> (Company)</span>}
                         </a>
+                        {phoneSource && (
+                          <span className="text-[10px] text-muted-foreground ml-4">Source: {phoneSource}</span>
+                        )}
                         {showMobileSeparately && (
                           <a href={`tel:${mobileNumber.replace(/[^\d+]/g, '')}`} className="text-xs text-muted-foreground flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
                             <Phone size={12} /> {mobileNumber} <span className="text-[10px]">(Mobile)</span>
                           </a>
                         )}
                       </>
+                    );
+                  })()}
+                  {/* ZoomInfo links */}
+                  {(() => {
+                    const importLog = (primaryContact as any).import_log;
+                    const latestLog = Array.isArray(importLog) ? importLog[importLog.length - 1] : importLog;
+                    const ziContact = latestLog?.zoominfo_contact_url;
+                    const ziCompany = latestLog?.zoominfo_company_url;
+                    if (!ziContact && !ziCompany) return null;
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {ziContact && (
+                          <a href={ziContact.startsWith('http') ? ziContact : `https://${ziContact}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                            <ExternalLink size={12} /> Open in ZoomInfo (Person)
+                          </a>
+                        )}
+                        {ziCompany && (
+                          <a href={ziCompany.startsWith('http') ? ziCompany : `https://${ziCompany}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                            <ExternalLink size={12} /> Open in ZoomInfo (Company)
+                          </a>
+                        )}
+                      </div>
                     );
                   })()}
                   {primaryContact.linkedin_url && (
