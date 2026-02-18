@@ -16,6 +16,7 @@ import LeadQueue from "./pages/LeadQueue";
 import COIQueue from "./pages/COIQueue";
 import Enrichment from "./pages/Enrichment";
 import LeadSettings from "./pages/LeadSettings";
+import BizdevSOP from "./pages/BizdevSOP";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/coi-queue" element={<COIQueue />} />
             <Route path="/enrichment" element={<Enrichment />} />
             <Route path="/lead-settings" element={<LeadSettings />} />
+            <Route path="/bizdev-sop" element={<BizdevSOP />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

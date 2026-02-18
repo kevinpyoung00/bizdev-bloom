@@ -326,7 +326,14 @@ export type Database = {
       contacts_le: {
         Row: {
           account_id: string | null
+          auto_triggers: Json
+          badges: Json
+          batch_id: string | null
+          campaign_batch_id: string | null
           created_at: string
+          crm_guid: string | null
+          crm_record_url: string | null
+          crm_status: string | null
           department: string | null
           email: string | null
           enrichment_log: Json | null
@@ -337,14 +344,25 @@ export type Database = {
           last_name: string
           linkedin_url: string | null
           location: string | null
+          manual_triggers: Json
           phone: string | null
+          role_start_date: string | null
           seniority: string | null
+          source_batch_id: string | null
           title: string | null
+          trigger_profile: Json
           updated_at: string
         }
         Insert: {
           account_id?: string | null
+          auto_triggers?: Json
+          badges?: Json
+          batch_id?: string | null
+          campaign_batch_id?: string | null
           created_at?: string
+          crm_guid?: string | null
+          crm_record_url?: string | null
+          crm_status?: string | null
           department?: string | null
           email?: string | null
           enrichment_log?: Json | null
@@ -355,14 +373,25 @@ export type Database = {
           last_name: string
           linkedin_url?: string | null
           location?: string | null
+          manual_triggers?: Json
           phone?: string | null
+          role_start_date?: string | null
           seniority?: string | null
+          source_batch_id?: string | null
           title?: string | null
+          trigger_profile?: Json
           updated_at?: string
         }
         Update: {
           account_id?: string | null
+          auto_triggers?: Json
+          badges?: Json
+          batch_id?: string | null
+          campaign_batch_id?: string | null
           created_at?: string
+          crm_guid?: string | null
+          crm_record_url?: string | null
+          crm_status?: string | null
           department?: string | null
           email?: string | null
           enrichment_log?: Json | null
@@ -373,9 +402,13 @@ export type Database = {
           last_name?: string
           linkedin_url?: string | null
           location?: string | null
+          manual_triggers?: Json
           phone?: string | null
+          role_start_date?: string | null
           seniority?: string | null
+          source_batch_id?: string | null
           title?: string | null
+          trigger_profile?: Json
           updated_at?: string
         }
         Relationships: [
@@ -386,7 +419,35 @@ export type Database = {
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "contacts_le_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "lead_batches"
+            referencedColumns: ["batch_id"]
+          },
         ]
+      }
+      d365_contacts_cache: {
+        Row: {
+          account_domain: string | null
+          email: string
+          last_activity_date: string | null
+          owner: string | null
+        }
+        Insert: {
+          account_domain?: string | null
+          email: string
+          last_activity_date?: string | null
+          owner?: string | null
+        }
+        Update: {
+          account_domain?: string | null
+          email?: string
+          last_activity_date?: string | null
+          owner?: string | null
+        }
+        Relationships: []
       }
       discovery_settings: {
         Row: {
@@ -601,6 +662,30 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_batches: {
+        Row: {
+          batch_id: string
+          campaign_batch_id: string
+          created_on: string
+          manual_triggers: Json
+          source_batch_id: string | null
+        }
+        Insert: {
+          batch_id?: string
+          campaign_batch_id: string
+          created_on?: string
+          manual_triggers?: Json
+          source_batch_id?: string | null
+        }
+        Update: {
+          batch_id?: string
+          campaign_batch_id?: string
+          created_on?: string
+          manual_triggers?: Json
+          source_batch_id?: string | null
+        }
+        Relationships: []
+      }
       lead_queue: {
         Row: {
           account_id: string | null
@@ -751,6 +836,33 @@ export type Database = {
           id?: string
           keywords?: Json
           updated_at?: string
+        }
+        Relationships: []
+      }
+      trigger_dictionary: {
+        Row: {
+          category: string | null
+          created_by: string | null
+          created_on: string
+          is_custom: boolean
+          label: string
+          trigger_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_by?: string | null
+          created_on?: string
+          is_custom?: boolean
+          label: string
+          trigger_id?: string
+        }
+        Update: {
+          category?: string | null
+          created_by?: string | null
+          created_on?: string
+          is_custom?: boolean
+          label?: string
+          trigger_id?: string
         }
         Relationships: []
       }

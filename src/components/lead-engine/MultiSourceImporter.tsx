@@ -10,6 +10,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { canonicalCompanyName, fuzzyMatch } from '@/lib/canonicalize';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
+import TriggerPanel from '@/components/lead-engine/TriggerPanel';
+import type { TriggerTag } from '@/types/bizdev';
 
 interface ParsedFile {
   name: string;
@@ -105,7 +108,7 @@ function pickBestField(entries: { value: string; source: string }[], priority: s
   return nonEmpty[0];
 }
 
-type Step = 'upload' | 'mapping' | 'preview' | 'importing' | 'done';
+type Step = 'upload' | 'mapping' | 'triggers' | 'preview' | 'importing' | 'done';
 
 interface Props {
   open: boolean;
@@ -114,12 +117,16 @@ interface Props {
 
 export default function MultiSourceImporter({ open, onOpenChange }: Props) {
   const queryClient = useQueryClient();
+  const triggersEnabled = useFeatureFlag('bizdev_triggers');
   const [files, setFiles] = useState<ParsedFile[]>([]);
   const [merged, setMerged] = useState<MergedContact[]>([]);
   const [step, setStep] = useState<Step>('upload');
   const [importResult, setImportResult] = useState<{ accounts: number; contacts: number; merged: number } | null>(null);
   // Per-file manual header mappings: fileIndex -> { field -> csvHeader }
   const [fileMappings, setFileMappings] = useState<Record<number, Record<string, string>>>({});
+  // Batch trigger tags (manual triggers applied to entire import batch)
+  const [batchTriggers, setBatchTriggers] = useState<TriggerTag[]>([]);
+  const [batchId, setBatchId] = useState<string | null>(null);
 
   const reset = () => {
     setFiles([]);
@@ -127,6 +134,8 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
     setStep('upload');
     setImportResult(null);
     setFileMappings({});
+    setBatchTriggers([]);
+    setBatchId(null);
   };
 
   const addFile = useCallback((file: File) => {
@@ -279,6 +288,31 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
     }
 
     setMerged(results);
+    // If triggers feature is enabled, show trigger tagging before preview
+    if (triggersEnabled) {
+      setStep('triggers');
+    } else {
+      setStep('preview');
+    }
+  };
+
+  const handleTriggersSave = async (tags: TriggerTag[]) => {
+    setBatchTriggers(tags);
+    // Create a batch record in the database
+    const campaignBatchId = `batch-${Date.now()}`;
+    const sourceBatchId = files.map(f => f.name).join('+');
+    try {
+      const { data, error } = await supabase.from('lead_batches' as any).insert({
+        campaign_batch_id: campaignBatchId,
+        source_batch_id: sourceBatchId,
+        manual_triggers: tags,
+      } as any).select('batch_id').single();
+      if (error) throw error;
+      setBatchId((data as any).batch_id);
+    } catch (err: any) {
+      console.error('Batch creation error:', err);
+      // Continue without batch — non-blocking
+    }
     setStep('preview');
   };
 
@@ -347,16 +381,22 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
 
         if (existingContactId) {
           // Update existing contact with better data
-          await supabase.from('contacts_le').update({
+          const updatePayload: any = {
             title: row.title || undefined,
             email: row.email || undefined,
             phone: row.phone || undefined,
             linkedin_url: linkedinUrl || undefined,
             account_id: accountId,
-          } as any).eq('id', existingContactId);
+          };
+          if (batchId) {
+            updatePayload.batch_id = batchId;
+            updatePayload.manual_triggers = batchTriggers;
+            updatePayload.trigger_profile = batchTriggers;
+          }
+          await supabase.from('contacts_le').update(updatePayload).eq('id', existingContactId);
           mergeCount++;
         } else {
-          await supabase.from('contacts_le').insert({
+          const insertPayload: any = {
             first_name: row.first_name || 'Unknown',
             last_name: row.last_name || '',
             title: row.title || null,
@@ -365,7 +405,14 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             linkedin_url: linkedinUrl || null,
             account_id: accountId,
             import_log: [importLogEntry],
-          } as any);
+          };
+          if (batchId) {
+            insertPayload.batch_id = batchId;
+            insertPayload.campaign_batch_id = `batch-${Date.now()}`;
+            insertPayload.manual_triggers = batchTriggers;
+            insertPayload.trigger_profile = batchTriggers;
+          }
+          await supabase.from('contacts_le').insert(insertPayload);
           contactCount++;
         }
       }
@@ -542,11 +589,32 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           </div>
         )}
 
+        {step === 'triggers' && (
+          <div className="space-y-4">
+            <TriggerPanel onSave={handleTriggersSave} initialTags={batchTriggers} />
+            <div className="flex justify-between">
+              <Button variant="outline" size="sm" onClick={() => setStep('mapping')}>Back</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setBatchTriggers([]); setStep('preview'); }}>
+                Skip — No Triggers
+              </Button>
+            </div>
+          </div>
+        )}
+
         {step === 'preview' && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{merged.length}</span> unique contacts/companies after deduplication from {files.length} files.
             </p>
+
+            {batchTriggers.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <span className="text-xs text-muted-foreground">Batch triggers:</span>
+                {batchTriggers.map(t => (
+                  <Badge key={t.label} variant="secondary" className="text-[10px]">{t.label}</Badge>
+                ))}
+              </div>
+            )}
 
             <div className="overflow-x-auto border border-border rounded max-h-[400px]">
               <Table>
@@ -582,7 +650,7 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setStep('mapping')}>Back</Button>
+              <Button variant="outline" size="sm" onClick={() => setStep(triggersEnabled ? 'triggers' : 'mapping')}>Back</Button>
               <Button size="sm" onClick={handleImport}>
                 Import {merged.length} Records <ArrowRight size={14} className="ml-1" />
               </Button>

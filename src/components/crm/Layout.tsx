@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CalendarCheck, Columns3, Megaphone,
-  ChevronLeft, ChevronRight, Target, Handshake, Database, Settings
+  ChevronLeft, ChevronRight, Target, Handshake, Database, Settings, BookOpen
 } from 'lucide-react';
 import { useState } from 'react';
 import { useCrm } from '@/store/CrmContext';
@@ -18,6 +18,7 @@ const navItems = [
   { to: '/coi-queue', icon: Handshake, label: 'COI Prospect Queue' },
   { to: '/enrichment', icon: Database, label: 'Enrichment' },
   { to: '/lead-settings', icon: Settings, label: 'Settings' },
+  { to: '/bizdev-sop', icon: BookOpen, label: 'SOP' },
 ] as const;
 
 export default function Layout({ children }: { children: ReactNode }) {
