@@ -34,6 +34,7 @@ import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 import DiscoveryControlPanel, { type DiscoveryPanelParams } from '@/components/lead-engine/DiscoveryControlPanel';
 import PreviewCandidatesDrawer, { type PreviewCandidate } from '@/components/lead-engine/PreviewCandidatesDrawer';
 import DiscoverySummaryChip, { type DiscoverySummaryData } from '@/components/lead-engine/DiscoverySummaryChip';
+import { useQuery } from '@tanstack/react-query';
 
 // ── Signal Pills Row with tooltips ──
 function SignalPillsRow({ leadSignals, triggers }: { leadSignals: any; triggers: any }) {
@@ -188,6 +189,31 @@ export default function LeadQueue() {
   const d365ExportEnabled = useFeatureFlag('bizdev_d365_export');
   const campaignBulkEnabled = useFeatureFlag('bizdev_campaign_bulk');
 
+  // Batch filter
+  const [batchFilter, setBatchFilter] = useState<string>('all');
+  const { data: batches = [] } = useQuery({
+    queryKey: ['lead-batches'],
+    queryFn: async () => {
+      const { data } = await supabase.from('lead_batches').select('batch_id, source_batch_id, campaign_batch_id, created_on').order('created_on', { ascending: false });
+      return (data || []) as { batch_id: string; source_batch_id: string | null; campaign_batch_id: string; created_on: string }[];
+    },
+  });
+
+  // Map account_id → batch_id via contacts_le
+  const { data: contactBatchMap = new Map() } = useQuery({
+    queryKey: ['contact-batch-map'],
+    queryFn: async () => {
+      const { data } = await supabase.from('contacts_le').select('account_id, batch_id, campaign_batch_id').not('batch_id', 'is', null);
+      const map = new Map<string, { batch_id: string; campaign_batch_id: string | null }>();
+      for (const c of data || []) {
+        if (c.account_id && c.batch_id) {
+          map.set(c.account_id, { batch_id: c.batch_id, campaign_batch_id: c.campaign_batch_id });
+        }
+      }
+      return map;
+    },
+  });
+
   // Discovery state
   const [discoveryPanelOpen, setDiscoveryPanelOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -199,6 +225,10 @@ export default function LeadQueue() {
     const d365Status = (l.account as any).d365_status || 'unknown';
     if (hideOwned && d365Status === 'owned') return false;
     if (showNeedsReviewOnly && !(l.account as any).needs_review) return false;
+    if (batchFilter !== 'all') {
+      const batchInfo = contactBatchMap.get(l.account.id);
+      if (!batchInfo || batchInfo.batch_id !== batchFilter) return false;
+    }
     return true;
   });
 
@@ -378,7 +408,7 @@ export default function LeadQueue() {
     if (leads.length === 0) {
       return (
         <TableRow>
-          <TableCell colSpan={12} className="text-center py-12">
+          <TableCell colSpan={13} className="text-center py-12">
             <div className="space-y-3">
               <p className="text-muted-foreground">No leads for the selected scope. Try running scoring or changing the scope to "Last 7 days".</p>
               <p className="text-xs text-muted-foreground">Owned accounts may be hidden — unhide in Filters.</p>
@@ -397,7 +427,7 @@ export default function LeadQueue() {
     }
     return (
       <TableRow>
-        <TableCell colSpan={12} className="text-center py-12 text-muted-foreground">
+        <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
           No leads match current filters. Uncheck "Hide Owned" or "Show Needs Review only".
         </TableCell>
       </TableRow>
@@ -502,6 +532,35 @@ export default function LeadQueue() {
                 <Switch checked={showNeedsReviewOnly} onCheckedChange={setShowNeedsReviewOnly} id="needs-review-only" />
                 <label htmlFor="needs-review-only" className="text-xs text-muted-foreground cursor-pointer">Show Needs Review only</label>
               </div>
+              {batches.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Batch:</span>
+                  <Select value={batchFilter} onValueChange={(v) => setBatchFilter(v)}>
+                    <SelectTrigger className="h-7 w-[200px] text-xs">
+                      <SelectValue placeholder="All batches" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All batches</SelectItem>
+                      {batches.map(b => (
+                        <SelectItem key={b.batch_id} value={b.batch_id}>
+                          {b.source_batch_id ? b.source_batch_id.substring(0, 30) : b.campaign_batch_id}
+                          <span className="text-muted-foreground ml-1">({new Date(b.created_on).toLocaleDateString()})</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {batchFilter !== 'all' && (
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+                      // Select all leads in this batch
+                      const batchLeadIds = filteredLeads.map(l => l.id);
+                      setSelectedIds(new Set(batchLeadIds));
+                      toast.info(`Selected ${batchLeadIds.length} leads from batch`);
+                    }}>
+                      Select All in Batch
+                    </Button>
+                  )}
+                </div>
+              )}
               <Button variant="ghost" size="sm" className="text-xs h-7" onClick={handleClaimAllVisible}>
                 <CheckCircle2 size={12} className="mr-1" /> Claim all visible claimable
               </Button>
@@ -548,6 +607,7 @@ export default function LeadQueue() {
                       <TableHead className="w-14">Rank</TableHead>
                       <TableHead className="w-28">Priority</TableHead>
                       <TableHead>Company</TableHead>
+                      <TableHead className="w-24">Batch</TableHead>
                       <TableHead className="w-28">Industry</TableHead>
                       <TableHead className="w-20">Emp.</TableHead>
                       <TableHead className="w-16">Region</TableHead>
@@ -560,7 +620,7 @@ export default function LeadQueue() {
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
-                      <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground"><Loader2 className="inline animate-spin mr-2" size={16} /> Loading leads...</TableCell></TableRow>
                     ) : filteredLeads.length === 0 ? (
                       renderEmptyState()
                     ) : (
@@ -568,6 +628,8 @@ export default function LeadQueue() {
                         const claimStatus = (lead as any).claim_status || 'new';
                         const d365Status = (lead.account as any).d365_status || 'unknown';
                         const rec = recommendPersona(lead.account.employee_count, lead.industry_key, lead.reason);
+                        const batchInfo = contactBatchMap.get(lead.account.id);
+                        const batchLabel = batchInfo ? batches.find(b => b.batch_id === batchInfo.batch_id) : null;
                         return (
                           <TableRow
                             key={lead.id}
@@ -586,6 +648,19 @@ export default function LeadQueue() {
                                   Details
                                 </Button>
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {batchLabel ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] cursor-pointer hover:bg-accent"
+                                  onClick={(e) => { e.stopPropagation(); setBatchFilter(batchInfo!.batch_id); }}
+                                >
+                                  {batchLabel.source_batch_id ? batchLabel.source_batch_id.substring(0, 20) : batchInfo?.campaign_batch_id?.substring(0, 15) || '—'}
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">—</span>
+                              )}
                             </TableCell>
                             <TableCell><IndustryChip industry={lead.account.industry} /></TableCell>
                             <TableCell className="text-foreground">{lead.account.employee_count || '—'}</TableCell>
