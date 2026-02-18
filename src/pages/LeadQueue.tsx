@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2, Trash2, Mail, Phone, Linkedin } from 'lucide-react';
+import { Download, Eye, Loader2, CheckCircle2, X, Upload, FileUp, AlertTriangle, RotateCcw, Radar, Settings2, Trash2, Mail, Phone, Linkedin, Users } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -24,7 +24,9 @@ import SignalChips, { buildChipsFromTriggers, buildPillsFromLeadSignals } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import IndustryChip from '@/components/lead-engine/IndustryChip';
-import { exportD365CheckCSV, ImportD365Results } from '@/components/lead-engine/D365ExportImport';
+import { exportD365CheckCSV, exportD365Workbook, ImportD365Results, ImportD365Success } from '@/components/lead-engine/D365ExportImport';
+import BulkCampaignModal from '@/components/lead-engine/BulkCampaignModal';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
 import { recommendPersona } from '@/lib/personaRecommend';
@@ -178,7 +180,13 @@ export default function LeadQueue() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [importD365Open, setImportD365Open] = useState(false);
   const [multiImportOpen, setMultiImportOpen] = useState(false);
+  const [d365SuccessOpen, setD365SuccessOpen] = useState(false);
+  const [bulkCampaignOpen, setBulkCampaignOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('queue');
+
+  // Feature flags
+  const d365ExportEnabled = useFeatureFlag('bizdev_d365_export');
+  const campaignBulkEnabled = useFeatureFlag('bizdev_campaign_bulk');
 
   // Discovery state
   const [discoveryPanelOpen, setDiscoveryPanelOpen] = useState(false);
@@ -419,9 +427,24 @@ export default function LeadQueue() {
             <Button variant="outline" size="sm" onClick={() => exportD365CheckCSV(leads)}>
               <Download size={16} className="mr-1" /> Export to D365 Check
             </Button>
+            {d365ExportEnabled && (
+              <Button variant="outline" size="sm" onClick={async () => {
+                const claimedLeads = leads.filter(l => (l as any).claim_status === 'claimed');
+                const accountIds = claimedLeads.map(l => l.account.id);
+                const { data: contacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
+                exportD365Workbook(claimedLeads, contacts || []);
+              }}>
+                <Download size={16} className="mr-1" /> Export D365 Workbook
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setImportD365Open(true)}>
               <Upload size={16} className="mr-1" /> Import D365 Results
             </Button>
+            {d365ExportEnabled && (
+              <Button variant="outline" size="sm" onClick={() => setD365SuccessOpen(true)}>
+                <CheckCircle2 size={16} className="mr-1" /> Import D365 Success
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setMultiImportOpen(true)}>
               <FileUp size={16} className="mr-1" /> Multi-Source Import
             </Button>
@@ -503,6 +526,11 @@ export default function LeadQueue() {
                   {bulkReject.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <X size={12} className="mr-1" />}
                   Reject Selected
                 </Button>
+                {campaignBulkEnabled && (
+                  <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setBulkCampaignOpen(true)}>
+                    <Users size={12} className="mr-1" /> Add to Campaign
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedIds(new Set())}>
                   Clear
                 </Button>
@@ -706,7 +734,14 @@ export default function LeadQueue() {
 
       <AccountDrawer lead={selectedLead} open={drawerOpen} onOpenChange={setDrawerOpen} />
       <ImportD365Results open={importD365Open} onOpenChange={setImportD365Open} />
+      <ImportD365Success open={d365SuccessOpen} onOpenChange={setD365SuccessOpen} />
       <MultiSourceImporter open={multiImportOpen} onOpenChange={setMultiImportOpen} />
+      <BulkCampaignModal
+        open={bulkCampaignOpen}
+        onOpenChange={setBulkCampaignOpen}
+        selectedLeadIds={Array.from(selectedIds)}
+        onComplete={() => setSelectedIds(new Set())}
+      />
       <DiscoveryControlPanel
         open={discoveryPanelOpen}
         onOpenChange={setDiscoveryPanelOpen}
