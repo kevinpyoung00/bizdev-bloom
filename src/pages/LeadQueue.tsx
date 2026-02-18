@@ -701,7 +701,9 @@ export default function LeadQueue() {
                                 d365AccountId={(lead.account as any).d365_account_id}
                               />
                             </TableCell>
-                            <TableCell><LeadStatusBadge status={claimStatus} /></TableCell>
+                            <TableCell>
+                              <LeadStatusBadge status={(lead.account as any).status === 'waiting_for_zoominfo' && claimStatus === 'new' ? 'waiting_for_zoominfo' : claimStatus} />
+                            </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
                               <div className="flex flex-col items-center gap-1">
                                 {claimStatus === 'new' && (

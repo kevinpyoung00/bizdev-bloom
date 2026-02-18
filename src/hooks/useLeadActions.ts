@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { detectPersona } from '@/lib/persona';
 import { matchIndustryKey } from '@/lib/industry';
 
-export type ClaimStatus = 'new' | 'claimed' | 'uploaded' | 'in_campaign' | 'rejected';
+export type ClaimStatus = 'new' | 'claimed' | 'uploaded' | 'in_campaign' | 'rejected' | 'waiting_for_zoominfo';
 
 export const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
   new: 'New',
@@ -12,6 +12,7 @@ export const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
   uploaded: 'Uploaded to D365',
   in_campaign: 'In Campaign',
   rejected: 'Rejected',
+  waiting_for_zoominfo: 'Waiting for ZoomInfo',
 };
 
 export const REJECT_REASONS = [
