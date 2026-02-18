@@ -398,6 +398,103 @@ export async function exportD365LeadWorkbook(leads: LeadWithAccount[], contacts:
   });
 }
 
+// ── D365 Accounts CSV Export (unique companies, import-ready) ──
+
+function normalizeDomain(raw: string): string {
+  try {
+    let url = raw.trim();
+    if (!url) return '';
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    return host;
+  } catch {
+    return '';
+  }
+}
+
+function normalizeWebsite(raw: string): string {
+  let url = (raw || '').trim();
+  if (!url) return '';
+  // Collapse double https://
+  url = url.replace(/https?:\/\/https?:\/\//gi, 'https://');
+  // Force https
+  if (/^www\./i.test(url)) url = 'https://' + url;
+  url = url.replace(/^http:\/\//i, 'https://');
+  if (!/^https:\/\//i.test(url)) url = 'https://' + url;
+  return url.replace(/\/+$/, '');
+}
+
+function normalizeCompanyName(name: string): string {
+  return (name || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+export function exportD365AccountsCSV(leads: LeadWithAccount[]) {
+  if (leads.length === 0) { toast.info('No leads to export'); return; }
+
+  // Dedupe: group by domain (preferred) or normalized company name
+  const groups = new Map<string, LeadWithAccount[]>();
+  for (const lead of leads) {
+    const website = lead.account.website || (lead.account.domain ? `https://${lead.account.domain}` : '');
+    const domain = normalizeDomain(website);
+    const key = domain || normalizeCompanyName(lead.account.name);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(lead);
+  }
+
+  // Pick best row per group
+  const rows: Record<string, string | number>[] = [];
+  for (const group of groups.values()) {
+    const best = group.sort((a, b) => {
+      const aWeb = a.account.website || a.account.domain ? 1 : 0;
+      const bWeb = b.account.website || b.account.domain ? 1 : 0;
+      if (bWeb !== aWeb) return bWeb - aWeb;
+      const aInd = a.account.industry ? 1 : 0;
+      const bInd = b.account.industry ? 1 : 0;
+      if (bInd !== aInd) return bInd - aInd;
+      return (b.account.employee_count || 0) - (a.account.employee_count || 0);
+    })[0];
+
+    const website = normalizeWebsite(
+      best.account.website || (best.account.domain ? best.account.domain : '')
+    );
+    const empCount = best.account.employee_count;
+    const empStr = empCount != null ? String(Math.max(0, Math.floor(Number(String(empCount).replace(/\D/g, '')) || 0))) : '';
+
+    rows.push({
+      'Account Name': best.account.name || '',
+      'Website': website,
+      'Address 1: City': best.account.hq_city || '',
+      'Address 1: State/Province': best.account.hq_state || '',
+      'Industry': best.account.industry || '',
+      'Number of Employees': empStr === '0' ? '' : empStr,
+    });
+  }
+
+  // Generate CSV with CRLF
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const csv = XLSX.utils.sheet_to_csv(ws, { RS: '\r\n' });
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  a.download = `D365_Accounts_Import_${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  toast.success(`Exported ${rows.length} unique accounts as CSV. In Dynamics → Accounts → Import from CSV.`);
+
+  supabase.from('audit_log').insert({
+    actor: 'user', action: 'export_d365_accounts_csv',
+    entity_type: 'accounts',
+    details: { unique_accounts: rows.length, total_leads: leads.length },
+  });
+}
+
 // ── Shared drop zone ──
 
 function DropZone({ processing, onFile }: { processing: boolean; onFile: (f: File) => void }) {

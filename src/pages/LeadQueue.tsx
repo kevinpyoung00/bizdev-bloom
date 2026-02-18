@@ -24,7 +24,7 @@ import SignalChips, { buildChipsFromTriggers, buildPillsFromLeadSignals } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import IndustryChip from '@/components/lead-engine/IndustryChip';
-import { exportD365CheckCSV, exportD365Workbook, exportD365LeadWorkbook, ImportD365Results, ImportD365Success } from '@/components/lead-engine/D365ExportImport';
+import { exportD365CheckCSV, exportD365Workbook, exportD365LeadWorkbook, exportD365AccountsCSV, ImportD365Results, ImportD365Success } from '@/components/lead-engine/D365ExportImport';
 import BulkCampaignModal from '@/components/lead-engine/BulkCampaignModal';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
@@ -475,6 +475,11 @@ export default function LeadQueue() {
                 exportD365LeadWorkbook(claimedLeads, contacts || []);
               }}>
                 <Download size={16} className="mr-1" /> Export D365 (Lead)
+              </Button>
+            )}
+            {d365ExportEnabled && (
+              <Button variant="outline" size="sm" title="Export unique companies in the exact CSV format accepted by D365 Accounts import." onClick={() => exportD365AccountsCSV(leads)}>
+                <Download size={16} className="mr-1" /> D365 (Accounts CSV)
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setImportD365Open(true)}>
