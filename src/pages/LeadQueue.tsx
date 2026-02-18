@@ -29,8 +29,11 @@ import BulkCampaignModal from '@/components/lead-engine/BulkCampaignModal';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
+import ClaimedTab from '@/components/lead-engine/ClaimedTab';
+import BatchChip from '@/components/lead-engine/BatchChip';
 import { recommendPersona } from '@/lib/personaRecommend';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
+import type { BatchMeta } from '@/lib/batchLabel';
 import DiscoveryControlPanel, { type DiscoveryPanelParams } from '@/components/lead-engine/DiscoveryControlPanel';
 import PreviewCandidatesDrawer, { type PreviewCandidate } from '@/components/lead-engine/PreviewCandidatesDrawer';
 import DiscoverySummaryChip, { type DiscoverySummaryData } from '@/components/lead-engine/DiscoverySummaryChip';
@@ -67,10 +70,10 @@ function loadFilters() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as { scope?: QueueScope; hideOwned?: boolean; showNeedsReviewOnly?: boolean };
+    return JSON.parse(raw) as { scope?: QueueScope; hideOwned?: boolean; showNeedsReviewOnly?: boolean; activeTab?: string };
   } catch { return null; }
 }
-function saveFilters(f: { scope: QueueScope; hideOwned: boolean; showNeedsReviewOnly: boolean }) {
+function saveFilters(f: { scope: QueueScope; hideOwned: boolean; showNeedsReviewOnly: boolean; activeTab: string }) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(f));
 }
 
@@ -159,8 +162,9 @@ export default function LeadQueue() {
   const [scope, setScope] = useState<QueueScope>(saved?.scope || 'today');
   const [hideOwned, setHideOwned] = useState(saved?.hideOwned ?? false);
   const [showNeedsReviewOnly, setShowNeedsReviewOnly] = useState(saved?.showNeedsReviewOnly ?? false);
+  const [activeTab, setActiveTab] = useState(saved?.activeTab || 'queue');
 
-  useEffect(() => { saveFilters({ scope, hideOwned, showNeedsReviewOnly }); }, [scope, hideOwned, showNeedsReviewOnly]);
+  useEffect(() => { saveFilters({ scope, hideOwned, showNeedsReviewOnly, activeTab }); }, [scope, hideOwned, showNeedsReviewOnly, activeTab]);
 
   const { data: leads = [], isLoading } = useLeadQueue(scope);
   const { data: rejectedLeads = [] } = useRejectedLeads();
@@ -183,7 +187,6 @@ export default function LeadQueue() {
   const [multiImportOpen, setMultiImportOpen] = useState(false);
   const [d365SuccessOpen, setD365SuccessOpen] = useState(false);
   const [bulkCampaignOpen, setBulkCampaignOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('queue');
 
   // Feature flags
   const d365ExportEnabled = useFeatureFlag('bizdev_d365_export');
@@ -514,6 +517,14 @@ export default function LeadQueue() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="queue">Lead Queue</TabsTrigger>
+            <TabsTrigger value="claimed" className="flex items-center gap-1">
+              Claimed
+              {leads.filter(l => (l as any).claim_status === 'claimed').length > 0 && (
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 ml-1">
+                  {leads.filter(l => (l as any).claim_status === 'claimed').length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="needs-review" className="flex items-center gap-1">
               Needs Review
               {needsReviewCount > 0 && (
@@ -551,15 +562,14 @@ export default function LeadQueue() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Batch:</span>
                   <Select value={batchFilter} onValueChange={(v) => setBatchFilter(v)}>
-                    <SelectTrigger className="h-7 w-[200px] text-xs">
+                    <SelectTrigger className="h-7 w-[280px] text-xs">
                       <SelectValue placeholder="All batches" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All batches</SelectItem>
                       {batches.map(b => (
                         <SelectItem key={b.batch_id} value={b.batch_id}>
-                          {b.source_batch_id ? b.source_batch_id.substring(0, 30) : b.campaign_batch_id}
-                          <span className="text-muted-foreground ml-1">({new Date(b.created_on).toLocaleDateString()})</span>
+                          <BatchChip batch={b as BatchMeta} />
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -666,13 +676,11 @@ export default function LeadQueue() {
                             </TableCell>
                             <TableCell>
                               {batchLabel ? (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[9px] cursor-pointer hover:bg-accent"
-                                  onClick={(e) => { e.stopPropagation(); setBatchFilter(batchInfo!.batch_id); }}
-                                >
-                                  {batchLabel.source_batch_id ? batchLabel.source_batch_id.substring(0, 20) : batchInfo?.campaign_batch_id?.substring(0, 15) || '—'}
-                                </Badge>
+                                <BatchChip
+                                  batch={batchLabel}
+                                  onClick={(id) => setBatchFilter(id)}
+                                  isActive={batchFilter === batchLabel.batch_id}
+                                />
                               ) : (
                                 <span className="text-[10px] text-muted-foreground">—</span>
                               )}
@@ -759,10 +767,22 @@ export default function LeadQueue() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="claimed">
+            <Card>
+              <CardContent className="p-0">
+                <ClaimedTab
+                  batchFilter={batchFilter}
+                  onBatchFilterChange={setBatchFilter}
+                  batches={batches as BatchMeta[]}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="needs-review">
             <Card>
               <CardContent className="p-0">
-                <NeedsReviewTab />
+                <NeedsReviewTab batches={batches as BatchMeta[]} />
               </CardContent>
             </Card>
           </TabsContent>
