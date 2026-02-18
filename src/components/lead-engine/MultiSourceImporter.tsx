@@ -13,6 +13,7 @@ import { canonicalCompanyName, fuzzyMatch } from '@/lib/canonicalize';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import TriggerPanel from '@/components/lead-engine/TriggerPanel';
 import type { TriggerTag } from '@/types/bizdev';
+import { resolvePhone, resolveIndustry, normalizeUrl, type PhoneResult, type IndustryResult } from '@/lib/importNormalizers';
 
 interface ParsedFile {
   name: string;
@@ -27,13 +28,17 @@ interface MergedContact {
   title: string;
   email: string;
   phone: string;
+  phone_is_company: boolean;
+  phones_raw: Record<string, string>;
   linkedin_url: string;
   company_name: string;
   company_domain: string;
   industry: string;
+  industry_raw: Record<string, string>;
   employee_count: string;
   hq_city: string;
   hq_state: string;
+  invalid_urls: Record<string, string>;
   _sources: string[];
   _fields_merged: Record<string, string>;
 }
@@ -57,11 +62,11 @@ const HEADER_MAP: Record<string, RegExp> = {
   last_name: /last.?name|lname|surname|^last$/i,
   title: /title|job.?title|position|^role$/i,
   email: /email|e-?mail/i,
-  phone: /phone|mobile|direct.?phone|work.?phone/i,
+  phone: /phone|mobile|direct.?phone|work.?phone|direct.?dial|business.?phone|corporate.?phone|company.?phone/i,
   linkedin_url: /linkedin|li.?url|li.?profile|person.?linkedin|contact.?linkedin|profile.?url/i,
   company_name: /company|org|account|company.?name/i,
   company_domain: /\b(domain|website|company.?url|web|company.?website)\b/i,
-  industry: /industry|sector/i,
+  industry: /industry|sector|primary.?industry|all.?industr|industry.?hierarchical/i,
   employee_count: /employee|emp.?count|size|headcount|number.?of.?emp/i,
   hq_city: /city|hq.?city/i,
   hq_state: /state|hq.?state|region/i,
@@ -243,13 +248,11 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
       }));
 
       const emailPick = pickBestField(getField('email'), EMAIL_PRIORITY);
-      const phonePick = pickBestField(getField('phone'), PHONE_PRIORITY);
       const titlePick = pickBestField(getField('title'), TITLE_PRIORITY);
       const domainPick = pickBestField(getField('company_domain'), DOMAIN_PRIORITY);
       const linkedinPick = getField('linkedin_url').find(e => e.value);
 
       if (emailPick) fields_merged.email = emailPick.source;
-      if (phonePick) fields_merged.phone = phonePick.source;
       if (titlePick) fields_merged.title = titlePick.source;
       if (domainPick) fields_merged.company_domain = domainPick.source;
 
@@ -261,6 +264,41 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         return '';
       };
 
+      // ── Phone: ordered header priority across all raw rows ──
+      let phoneResult: PhoneResult = { phone_direct: '', phone_is_company: false, phones_raw: {} };
+      for (const entry of group.entries) {
+        const pr = resolvePhone(entry.row, entry.row ? Object.keys(entry.row) : []);
+        // Merge raw debug values
+        for (const [k, v] of Object.entries(pr.phones_raw)) {
+          phoneResult.phones_raw[`${entry.source}:${k}`] = v;
+        }
+        if (!phoneResult.phone_direct && pr.phone_direct) {
+          phoneResult = { ...pr, phones_raw: phoneResult.phones_raw };
+        }
+      }
+      // Fallback to old mapped phone if resolvePhone found nothing
+      const oldPhonePick = pickBestField(getField('phone'), PHONE_PRIORITY);
+      if (!phoneResult.phone_direct && oldPhonePick?.value) {
+        phoneResult.phone_direct = oldPhonePick.value;
+      }
+      if (phoneResult.phone_direct) fields_merged.phone = 'priority_resolved';
+
+      // ── Industry: ordered header priority across all raw rows ──
+      let industryResult: IndustryResult = { industry: '', industry_raw: {} };
+      for (const entry of group.entries) {
+        const ir = resolveIndustry(entry.row, Object.keys(entry.row));
+        for (const [k, v] of Object.entries(ir.industry_raw)) {
+          industryResult.industry_raw[`${entry.source}:${k}`] = v;
+        }
+        if (!industryResult.industry && ir.industry) {
+          industryResult = { ...ir, industry_raw: industryResult.industry_raw };
+        }
+      }
+      // Fallback to old first-non-empty
+      if (!industryResult.industry) {
+        industryResult.industry = firstNonEmpty('industry');
+      }
+
       // Sanitize: if company_domain looks like a LinkedIn URL, move it to linkedin_url
       let finalDomain = domainPick?.value || '';
       let finalLinkedin = linkedinPick?.value || '';
@@ -269,19 +307,33 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         finalDomain = '';
       }
 
+      // ── URL normalization ──
+      const invalid_urls: Record<string, string> = {};
+      const liNorm = normalizeUrl(finalLinkedin);
+      finalLinkedin = liNorm.url;
+      if (liNorm.invalid_url_raw) invalid_urls.linkedin_url = liNorm.invalid_url_raw;
+
+      const domNorm = normalizeUrl(finalDomain);
+      finalDomain = domNorm.url;
+      if (domNorm.invalid_url_raw) invalid_urls.company_domain = domNorm.invalid_url_raw;
+
       results.push({
         first_name: firstNonEmpty('first_name'),
         last_name: firstNonEmpty('last_name'),
         title: titlePick?.value || '',
         email: emailPick?.value || '',
-        phone: phonePick?.value || '',
+        phone: phoneResult.phone_direct,
+        phone_is_company: phoneResult.phone_is_company,
+        phones_raw: phoneResult.phones_raw,
         linkedin_url: finalLinkedin,
         company_name: firstNonEmpty('company_name'),
         company_domain: finalDomain,
-        industry: firstNonEmpty('industry'),
+        industry: industryResult.industry,
+        industry_raw: industryResult.industry_raw,
         employee_count: firstNonEmpty('employee_count'),
         hq_city: firstNonEmpty('hq_city'),
         hq_state: firstNonEmpty('hq_state'),
+        invalid_urls,
         _sources: sources,
         _fields_merged: fields_merged,
       });
@@ -385,6 +437,10 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
           timestamp: new Date().toISOString(),
           sources: row._sources,
           fields_merged: row._fields_merged,
+          phones_raw: row.phones_raw,
+          phone_is_company: row.phone_is_company,
+          industry_raw: row.industry_raw,
+          invalid_urls: Object.keys(row.invalid_urls).length > 0 ? row.invalid_urls : undefined,
         };
 
         if (existingContactId) {
@@ -628,13 +684,14 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs">Name</TableHead>
-                    <TableHead className="text-xs">Company</TableHead>
-                    <TableHead className="text-xs">Title</TableHead>
-                    <TableHead className="text-xs">Email</TableHead>
-                    <TableHead className="text-xs">Phone</TableHead>
-                    <TableHead className="text-xs">LinkedIn</TableHead>
-                    <TableHead className="text-xs">Sources</TableHead>
+                     <TableHead className="text-xs">Name</TableHead>
+                     <TableHead className="text-xs">Company</TableHead>
+                     <TableHead className="text-xs">Title</TableHead>
+                     <TableHead className="text-xs">Email</TableHead>
+                     <TableHead className="text-xs">Phone</TableHead>
+                     <TableHead className="text-xs">Industry</TableHead>
+                     <TableHead className="text-xs">LinkedIn</TableHead>
+                     <TableHead className="text-xs">Sources</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -644,8 +701,17 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
                       <TableCell className="text-xs">{m.company_name}</TableCell>
                       <TableCell className="text-xs">{m.title || '—'}</TableCell>
                       <TableCell className="text-xs">{m.email || '—'}</TableCell>
-                      <TableCell className="text-xs">{m.phone || '—'}</TableCell>
-                      <TableCell className="text-xs">{m.linkedin_url ? '✓' : '—'}</TableCell>
+                      <TableCell className="text-xs">
+                        {m.phone ? (
+                          <span>{m.phone}{m.phone_is_company && <span className="text-muted-foreground ml-1">(Company)</span>}</span>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className="text-xs">{m.industry || '—'}</TableCell>
+                      <TableCell className="text-xs">
+                        {m.linkedin_url ? (
+                          <>✓{m.invalid_urls.linkedin_url && <span className="text-destructive ml-1" title={`Invalid source URL (kept raw): ${m.invalid_urls.linkedin_url}`}>!</span>}</>
+                        ) : '—'}
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {m._sources.map(s => <Badge key={s} variant="outline" className="text-[9px]">{s}</Badge>)}
