@@ -100,6 +100,7 @@ export default function ContactsCampaignModal({ open, onOpenChange, selectedCont
         setResult({ count: contacts.length });
         queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
         queryClient.invalidateQueries({ queryKey: ['contacts-le'] });
+        queryClient.invalidateQueries({ queryKey: ['campaign-counts'] });
         toast.success(`${contacts.length} contacts enrolled in "${campaignName}"`);
       }
 

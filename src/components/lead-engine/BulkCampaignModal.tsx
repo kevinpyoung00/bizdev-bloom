@@ -159,6 +159,7 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
 
       setResult({ added: contacts.length });
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-counts'] });
       toast.success(`${contacts.length} contacts enrolled in "${campaignName}"`);
 
       await supabase.from('audit_log').insert({

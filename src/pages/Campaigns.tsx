@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, Edit2, Trash2, Users, Megaphone } from 'lucide-react';
 import { Campaign, CampaignType, WeekPreset } from '@/types/crm';
+import { useCampaignCounts } from '@/hooks/useCampaignCounts';
 
 const emptyPresets = (): WeekPreset[] => Array.from({ length: 12 }, (_, i) => ({
   week: i + 1, emailTheme: '', linkedInTouch: '', cta: '', asset: '',
@@ -16,6 +17,7 @@ const emptyPresets = (): WeekPreset[] => Array.from({ length: 12 }, (_, i) => ({
 
 export default function Campaigns() {
   const { campaigns, contacts, addCampaign, updateCampaign, deleteCampaign } = useCrm();
+  const { getCountFor } = useCampaignCounts();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -73,7 +75,9 @@ export default function Campaigns() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {campaigns.map(campaign => {
-            const contactCount = contacts.filter(c => c.campaignId === campaign.id).length;
+            const crmCount = contacts.filter(c => c.campaignId === campaign.id).length;
+            const dbCount = getCountFor(campaign.name);
+            const contactCount = crmCount + dbCount;
             return (
               <div key={campaign.id} className="bg-card rounded-lg border border-border p-5 hover:shadow-sm transition-all">
                 <div className="flex items-start justify-between mb-3">

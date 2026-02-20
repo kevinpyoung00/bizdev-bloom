@@ -489,11 +489,11 @@ export default function LeadQueue() {
             <Button
               variant="outline"
               size="sm"
-              disabled={batchSendToContacts.isPending || batchFilter === 'all'}
-              title={batchFilter === 'all' ? 'Select a single Batch to push' : 'Push claimed contacts from this batch'}
+              disabled={batchSendToContacts.isPending || (activeTab !== 'claimed' && batchFilter === 'all')}
+              title={batchFilter === 'all' && selectedIds.size === 0 ? 'Select a single Batch or select leads' : 'Push claimed contacts from this batch'}
               onClick={() => {
-                if (batchFilter === 'all') { toast.error('Select a single Batch to push.'); return; }
-                batchSendToContacts.execute(batchFilter);
+                if (batchFilter === 'all' && selectedIds.size === 0) { toast.error('Select a single Batch.'); return; }
+                batchSendToContacts.execute(batchFilter !== 'all' ? batchFilter : '');
               }}
             >
               {batchSendToContacts.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Users size={16} className="mr-1" />}
@@ -502,10 +502,10 @@ export default function LeadQueue() {
             <Button
               variant="outline"
               size="sm"
-              disabled={batchSendToCampaign.isPending || batchFilter === 'all'}
-              title={batchFilter === 'all' ? 'Select a single Batch to push' : 'Push claimed contacts to campaign'}
+              disabled={batchSendToCampaign.isPending || (activeTab !== 'claimed' && batchFilter === 'all')}
+              title={batchFilter === 'all' && selectedIds.size === 0 ? 'Select a single Batch or select leads' : 'Push claimed contacts to campaign'}
               onClick={() => {
-                if (batchFilter === 'all') { toast.error('Select a single Batch to push.'); return; }
+                if (batchFilter === 'all' && selectedIds.size === 0) { toast.error('Select a single Batch.'); return; }
                 setSendToCampaignOpen(true);
               }}
             >
