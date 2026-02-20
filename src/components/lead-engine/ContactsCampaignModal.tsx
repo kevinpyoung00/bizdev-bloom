@@ -15,11 +15,13 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   selectedContactIds: string[];
   onComplete: () => void;
+  /** If true, IDs are CRM context contacts (localStorage). Otherwise contacts_le DB IDs. */
+  isCrmContacts?: boolean;
 }
 
-export default function ContactsCampaignModal({ open, onOpenChange, selectedContactIds, onComplete }: Props) {
+export default function ContactsCampaignModal({ open, onOpenChange, selectedContactIds, onComplete, isCrmContacts = false }: Props) {
   const queryClient = useQueryClient();
-  const { campaigns } = useCrm();
+  const { campaigns, contacts: crmContacts, updateContact } = useCrm();
   const [mode, setMode] = useState<'select' | 'create'>('select');
   const [campaignId, setCampaignId] = useState('');
   const [newName, setNewName] = useState('');
@@ -28,6 +30,7 @@ export default function ContactsCampaignModal({ open, onOpenChange, selectedCont
 
   const handleEnroll = async () => {
     let campaignName = '';
+    let selectedCampaignId = '';
     if (mode === 'create') {
       if (!newName.trim()) { toast.error('Enter a campaign name'); return; }
       campaignName = newName.trim();
@@ -35,66 +38,75 @@ export default function ContactsCampaignModal({ open, onOpenChange, selectedCont
       const found = campaigns.find(c => c.id === campaignId);
       if (!found) { toast.error('Select a campaign'); return; }
       campaignName = found.name;
+      selectedCampaignId = found.id;
     }
 
     setProcessing(true);
     try {
-      // Get selected contacts
-      const { data: contacts } = await supabase
-        .from('contacts_le')
-        .select('id, match_key, campaign_tags')
-        .in('id', selectedContactIds);
-
-      if (!contacts || contacts.length === 0) {
-        toast.error('No contacts found');
-        setProcessing(false);
-        return;
-      }
-
-      // Update contact campaign_tags
-      for (const c of contacts) {
-        const existing = ((c as any).campaign_tags || []) as string[];
-        const merged = mergeTags(existing, [campaignName]);
-        await supabase.from('contacts_le').update({
-          campaign_tags: merged as any,
-          campaign_batch_id: campaignName,
-        } as any).eq('id', c.id);
-      }
-
-      // Also update matching leads if they exist
-      const matchKeys = contacts.map(c => (c as any).match_key).filter(Boolean);
-      if (matchKeys.length > 0) {
-        // Find leads by account_id through contacts
-        const { data: contactsWithAccounts } = await supabase
+      if (isCrmContacts) {
+        // Update CRM context contacts directly
+        for (const id of selectedContactIds) {
+          updateContact(id, {
+            campaignId: selectedCampaignId || campaignName,
+          });
+        }
+        setResult({ count: selectedContactIds.length });
+        toast.success(`${selectedContactIds.length} contacts enrolled in "${campaignName}"`);
+      } else {
+        // DB contacts_le flow
+        const { data: contacts } = await supabase
           .from('contacts_le')
-          .select('account_id')
+          .select('id, match_key, campaign_tags')
           .in('id', selectedContactIds);
 
-        const accountIds = [...new Set((contactsWithAccounts || []).map(c => c.account_id).filter(Boolean))] as string[];
-        if (accountIds.length > 0) {
-          const { data: leadRows } = await supabase.from('lead_queue')
-            .select('id, campaign_tags')
-            .in('account_id', accountIds);
+        if (!contacts || contacts.length === 0) {
+          toast.error('No contacts found');
+          setProcessing(false);
+          return;
+        }
 
-          for (const row of leadRows || []) {
-            const existing = ((row as any).campaign_tags || []) as string[];
-            const merged = mergeTags(existing, [campaignName]);
-            await supabase.from('lead_queue').update({
-              campaign_tags: merged as any,
-            } as any).eq('id', row.id);
+        for (const c of contacts) {
+          const existing = ((c as any).campaign_tags || []) as string[];
+          const merged = mergeTags(existing, [campaignName]);
+          await supabase.from('contacts_le').update({
+            campaign_tags: merged as any,
+            campaign_batch_id: campaignName,
+          } as any).eq('id', c.id);
+        }
+
+        const matchKeys = contacts.map(c => (c as any).match_key).filter(Boolean);
+        if (matchKeys.length > 0) {
+          const { data: contactsWithAccounts } = await supabase
+            .from('contacts_le')
+            .select('account_id')
+            .in('id', selectedContactIds);
+
+          const accountIds = [...new Set((contactsWithAccounts || []).map(c => c.account_id).filter(Boolean))] as string[];
+          if (accountIds.length > 0) {
+            const { data: leadRows } = await supabase.from('lead_queue')
+              .select('id, campaign_tags')
+              .in('account_id', accountIds);
+
+            for (const row of leadRows || []) {
+              const existing = ((row as any).campaign_tags || []) as string[];
+              const merged = mergeTags(existing, [campaignName]);
+              await supabase.from('lead_queue').update({
+                campaign_tags: merged as any,
+              } as any).eq('id', row.id);
+            }
           }
         }
-      }
 
-      setResult({ count: contacts.length });
-      queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
-      queryClient.invalidateQueries({ queryKey: ['contacts-le'] });
-      toast.success(`${contacts.length} contacts enrolled in "${campaignName}"`);
+        setResult({ count: contacts.length });
+        queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
+        queryClient.invalidateQueries({ queryKey: ['contacts-le'] });
+        toast.success(`${contacts.length} contacts enrolled in "${campaignName}"`);
+      }
 
       await supabase.from('audit_log').insert({
         actor: 'user', action: 'contacts_add_campaign',
-        entity_type: 'contacts_le',
-        details: { campaign_name: campaignName, count: contacts.length },
+        entity_type: isCrmContacts ? 'crm_contacts' : 'contacts_le',
+        details: { campaign_name: campaignName, count: selectedContactIds.length },
       });
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`);

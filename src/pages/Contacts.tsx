@@ -305,6 +305,7 @@ export default function Contacts() {
           onOpenChange={setCampaignModalOpen}
           selectedContactIds={Array.from(selectedIds)}
           onComplete={() => setSelectedIds(new Set())}
+          isCrmContacts
         />
       </div>
     </Layout>
