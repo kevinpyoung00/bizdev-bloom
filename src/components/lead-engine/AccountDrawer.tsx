@@ -11,6 +11,7 @@ import { useGenerateDrip } from '@/hooks/useGenerateDrip';
 import { LeadWithAccount } from '@/hooks/useLeadEngine';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
 import { Mail, Phone, Linkedin, ExternalLink, FileText, User, Loader2, Copy, Check, AlertCircle, Play, Pencil, Save, AlertTriangle } from 'lucide-react';
+import { normalizeUrl } from '@/lib/normalizeUrl';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import D365StatusBadge from '@/components/lead-engine/D365StatusBadge';
 import { toast } from 'sonner';
@@ -346,7 +347,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     );
                   })()}
                   {primaryContact.linkedin_url && (
-                    <a href={primaryContact.linkedin_url.startsWith('http') ? primaryContact.linkedin_url : `https://${primaryContact.linkedin_url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
+                    <a href={normalizeUrl(primaryContact.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
                       <Linkedin size={12} /> LinkedIn
                     </a>
                   )}
@@ -455,7 +456,7 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     <div className="flex gap-3 mt-2">
                       {c.email && <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}><Mail size={12} /> {c.email}</a>}
                       {c.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {c.phone}</span>}
-                      {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}><Linkedin size={12} /> LinkedIn</a>}
+                      {c.linkedin_url && <a href={normalizeUrl(c.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}><Linkedin size={12} /> LinkedIn</a>}
                     </div>
                   </div>
                 ))}
