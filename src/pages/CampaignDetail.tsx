@@ -106,16 +106,8 @@ export default function CampaignDetail() {
     toast.success(`Pipeline updated: ${action}`);
   };
 
-  if (!campaign) {
-    return (
-      <Layout>
-        <div className="p-6 space-y-4">
-          <p className="text-muted-foreground">Campaign "{decodedName}" not found in your campaigns.</p>
-          <Button variant="outline" onClick={() => navigate('/campaigns')}><ArrowLeft size={14} className="mr-1" /> Back</Button>
-        </div>
-      </Layout>
-    );
-  }
+  // For DB-only campaigns (enrolled via Lead Queue), campaign may be null
+  const isDbOnly = !campaign;
 
   return (
     <Layout>
@@ -127,21 +119,25 @@ export default function CampaignDetail() {
               <ArrowLeft size={16} />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">{campaign.name}</h1>
-              <p className="text-sm text-muted-foreground">{campaign.type} · {contacts.length} contacts enrolled</p>
+              <h1 className="text-2xl font-bold text-foreground">{decodedName}</h1>
+              <p className="text-sm text-muted-foreground">{campaign?.type || 'Enrolled'} · {contacts.length} contacts enrolled</p>
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant={campaign.active ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => updateCampaign(campaign.id, { active: !campaign.active })}
-            >
-              {campaign.active ? '🟢 Active' : '⚪ Paused'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/campaigns')}>
-              <Edit2 size={14} className="mr-1" /> Edit Campaign
-            </Button>
+            {campaign && (
+              <>
+                <Button
+                  variant={campaign.active ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => updateCampaign(campaign.id, { active: !campaign.active })}
+                >
+                  {campaign.active ? '🟢 Active' : '⚪ Paused'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate('/campaigns')}>
+                  <Edit2 size={14} className="mr-1" /> Edit Campaign
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -282,19 +278,9 @@ export default function CampaignDetail() {
         </div>
 
         {/* Messaging Presets Preview */}
-        {campaign.weeklyPresets && campaign.weeklyPresets.length > 0 && (
+        {campaign?.weeklyPresets && campaign.weeklyPresets.length > 0 && (
           <div className="bg-card rounded-lg border border-border p-4">
-            <h3 className="font-semibold text-sm text-card-foreground mb-3">Messaging Presets (W1–W12)</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {campaign.weeklyPresets.map(p => (
-                <div key={p.week} className="p-2 rounded border border-border bg-background text-xs space-y-0.5">
-                  <span className="font-medium text-foreground">W{p.week}</span>
-                  {p.emailTheme && <p className="text-muted-foreground truncate">📧 {p.emailTheme}</p>}
-                  {p.linkedInTouch && <p className="text-muted-foreground truncate">💬 {p.linkedInTouch}</p>}
-                  {p.cta && <p className="text-muted-foreground truncate">🎯 {p.cta}</p>}
-                </div>
-              ))}
-            </div>
+...
           </div>
         )}
       </div>
