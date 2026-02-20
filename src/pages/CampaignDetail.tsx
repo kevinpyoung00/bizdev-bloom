@@ -246,8 +246,8 @@ export default function CampaignDetail() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1 max-w-[200px]">
-                          {c.triggers.slice(0, 3).map((t: string, i: number) => (
-                            <Badge key={i} variant="outline" className="text-[9px]">{t}</Badge>
+                          {c.triggers.slice(0, 3).map((t: any, i: number) => (
+                            <Badge key={i} variant="outline" className="text-[9px]">{typeof t === 'string' ? t : t.label}</Badge>
                           ))}
                           {c.triggers.length > 3 && (
                             <Badge variant="secondary" className="text-[9px]">+{c.triggers.length - 3}</Badge>
