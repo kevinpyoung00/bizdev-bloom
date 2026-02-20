@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function CampaignContactsTable({ campaignName }: Props) {
+  const navigate = useNavigate();
   const { advancePipeline } = usePipelineUpdate();
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'name' | 'company' | 'stage' | 'nextTouch'>('name');
@@ -170,7 +172,8 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                 return (
                   <tr
                     key={contact.id}
-                    className={`border-b border-border hover:bg-muted/30 transition-colors ${selectedIds.has(contact.id) ? 'bg-accent/50' : ''}`}
+                    className={`border-b border-border hover:bg-muted/30 cursor-pointer transition-colors ${selectedIds.has(contact.id) ? 'bg-accent/50' : ''}`}
+                    onClick={() => navigate(`/contacts/${contact.id}`)}
                   >
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                       <Checkbox checked={selectedIds.has(contact.id)} onCheckedChange={() => toggleSelect(contact.id)} />
