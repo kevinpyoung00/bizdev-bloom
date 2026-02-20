@@ -424,6 +424,10 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
             region={account.hq_state}
             domain={(account as any).domain || account.website}
             companyName={account.name}
+            firstName={primaryContact?.first_name}
+            lastName={primaryContact?.last_name}
+            email={primaryContact?.email}
+            phone={primaryContact?.phone}
             onTriggersUpdated={() => {
               toast.success('Account triggers updated');
             }}
