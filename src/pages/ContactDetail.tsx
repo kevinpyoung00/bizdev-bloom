@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
 import QuickAnalyze from '@/components/QuickAnalyze';
 import { normalizeUrl } from '@/lib/normalizeUrl';
+import { openExternal } from '@/lib/openExternal';
 
 function getEmployeeTier(count: string): string {
   const n = parseInt(count, 10);
@@ -421,9 +422,9 @@ export default function ContactDetail() {
               )}
             </div>
             {contact.linkedInUrl && (
-              <a href={normalizeUrl(contact.linkedInUrl)} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 text-xs flex items-center gap-1" onClick={e => e.stopPropagation()}>
+              <button onClick={e => openExternal(contact.linkedInUrl, e)} className="text-primary hover:text-primary/80 text-xs flex items-center gap-1">
                 <Linkedin size={12} /> LinkedIn Profile <ExternalLink size={10} />
-              </a>
+              </button>
             )}
           </div>
 

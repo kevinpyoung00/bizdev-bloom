@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Download, Send, Play, Loader2, Mail, Phone, Linkedin, Eye } from 'lucide-react';
 import { useCOIQueue, useRunCOIScoring } from '@/hooks/useCOIEngine';
 import { normalizeUrl } from '@/lib/normalizeUrl';
+import { openExternal } from '@/lib/openExternal';
 import type { COIWithData } from '@/hooks/useCOIEngine';
 
 function ScoreBadge({ score }: { score: number }) {
@@ -79,7 +80,7 @@ function COIDrawer({ coi, open, onOpenChange }: { coi: COIWithData | null; open:
                 <div className="flex gap-3 mt-2">
                   {bc.email && <a href={`mailto:${bc.email}`} className="text-xs text-primary flex items-center gap-1"><Mail size={12} /> {bc.email}</a>}
                   {bc.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {bc.phone}</span>}
-                  {bc.linkedin_url && <a href={normalizeUrl(bc.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-1" onClick={e => e.stopPropagation()}><Linkedin size={12} /> LinkedIn</a>}
+                  {bc.linkedin_url && <button onClick={e => openExternal(bc.linkedin_url, e)} className="text-xs text-primary flex items-center gap-1"><Linkedin size={12} /> LinkedIn</button>}
                 </div>
               </div>
             ) : (

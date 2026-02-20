@@ -12,6 +12,8 @@ import { useState, useMemo } from 'react';
 import { inferBaselineTriggers } from '@/lib/triggers';
 import { usePipelineUpdate, PIPELINE_STAGES, PIPELINE_COLORS } from '@/hooks/usePipelineUpdate';
 import { toast } from 'sonner';
+import { openExternal } from '@/lib/openExternal';
+import { normalizeUrl } from '@/lib/normalizeUrl';
 
 export default function CampaignDetail() {
   const { name } = useParams<{ name: string }>();
@@ -166,7 +168,7 @@ export default function CampaignDetail() {
                       </Button>
                     )}
                     {c.linkedin_url && (
-                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleAction(c.id, 'linkedin')}>
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={(e) => { openExternal(c.linkedin_url, e); handleAction(c.id, 'linkedin'); }}>
                         <Linkedin size={12} /> LI
                       </Button>
                     )}
@@ -258,7 +260,7 @@ export default function CampaignDetail() {
                             </Button>
                           )}
                           {c.linkedin_url && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Generate LinkedIn" onClick={() => handleAction(c.id, 'linkedin')}>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Open LinkedIn" onClick={(e) => { openExternal(c.linkedin_url, e); handleAction(c.id, 'linkedin'); }}>
                               <Linkedin size={12} />
                             </Button>
                           )}
