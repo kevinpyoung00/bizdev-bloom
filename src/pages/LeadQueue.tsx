@@ -24,7 +24,7 @@ import SignalChips, { buildChipsFromTriggers, buildPillsFromLeadSignals } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import IndustryChip from '@/components/lead-engine/IndustryChip';
-import { exportD365CheckCSV, exportD365Workbook, exportD365LeadWorkbook, exportD365AccountsCSV, ImportD365Results, ImportD365Success } from '@/components/lead-engine/D365ExportImport';
+import { exportD365AccountsCSV, ImportD365Results, ImportD365Success } from '@/components/lead-engine/D365ExportImport';
 import BulkCampaignModal from '@/components/lead-engine/BulkCampaignModal';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
@@ -457,29 +457,6 @@ export default function LeadQueue() {
               {runScoring.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : null}
               Run Scoring
             </Button>
-            <Button variant="outline" size="sm" onClick={() => exportD365CheckCSV(leads)}>
-              <Download size={16} className="mr-1" /> Export to D365 Check
-            </Button>
-            {d365ExportEnabled && (
-              <Button variant="outline" size="sm" onClick={async () => {
-                const claimedLeads = leads.filter(l => (l as any).claim_status === 'claimed');
-                const accountIds = claimedLeads.map(l => l.account.id);
-                const { data: contacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
-                exportD365Workbook(claimedLeads, contacts || []);
-              }}>
-                <Download size={16} className="mr-1" /> Export D365 Workbook
-              </Button>
-            )}
-            {d365ExportEnabled && (
-              <Button variant="outline" size="sm" onClick={async () => {
-                const claimedLeads = leads.filter(l => (l as any).claim_status === 'claimed');
-                const accountIds = claimedLeads.map(l => l.account.id);
-                const { data: contacts } = await supabase.from('contacts_le').select('*').in('account_id', accountIds);
-                exportD365LeadWorkbook(claimedLeads, contacts || []);
-              }}>
-                <Download size={16} className="mr-1" /> Export D365 (Lead)
-              </Button>
-            )}
             {d365ExportEnabled && (
               <Button variant="outline" size="sm" title="Export unique companies in the exact CSV format accepted by D365 Accounts import." onClick={() => exportD365AccountsCSV(leads)}>
                 <Download size={16} className="mr-1" /> D365 (Accounts CSV)
