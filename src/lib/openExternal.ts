@@ -2,8 +2,7 @@ import { normalizeUrl } from '@/lib/normalizeUrl';
 
 /**
  * Open an external URL in a new browser tab, breaking out of any iframe context.
- * This avoids ERR_BLOCKED_BY_RESPONSE errors from sites like LinkedIn
- * that block being loaded inside iframes.
+ * Falls back gracefully if cross-origin restrictions prevent window.top access.
  */
 export function openExternal(url: string | null | undefined, e?: React.MouseEvent) {
   if (e) {
@@ -12,7 +11,24 @@ export function openExternal(url: string | null | undefined, e?: React.MouseEven
   }
   const normalized = normalizeUrl(url);
   if (!normalized) return;
-  // Use window.open on the top-level window to escape iframe sandbox
-  const w = window.top || window;
-  w.open(normalized, '_blank', 'noopener,noreferrer');
+  
+  // Try window.top first (escapes iframe), fall back to window.open
+  try {
+    const w = window.top;
+    if (w && w !== window) {
+      w.open(normalized, '_blank');
+      return;
+    }
+  } catch {
+    // Cross-origin — top is inaccessible, fall back
+  }
+  
+  // Fallback: create a temporary <a> on the parent document
+  const a = document.createElement('a');
+  a.href = normalized;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
