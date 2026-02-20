@@ -1,17 +1,19 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Search, Mail, Linkedin, Phone, ArrowUpDown, Loader2, ExternalLink, ChevronDown, ChevronRight, Check, Copy, Calendar } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Search, Mail, Linkedin, Phone, ArrowUpDown, Loader2, ExternalLink, ChevronDown, ChevronRight, Check, Copy, Calendar, Building2, Sparkles, Target, Zap, Globe } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { usePipelineUpdate, PIPELINE_STAGES, PIPELINE_COLORS, getCurrentWeekFromProgress, getCompletedWeeks, type DripWeekProgress } from '@/hooks/usePipelineUpdate';
 import { inferBaselineTriggers } from '@/lib/triggers';
 import { WEEK_THEMES, getWeekTheme } from '@/lib/weekThemes';
 import { isCallWeek } from '@/types/crm';
 import { toast } from 'sonner';
+import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 
 interface Props {
   campaignName: string;
@@ -32,7 +34,6 @@ function generateDraft(week: number, channel: 'email' | 'linkedin' | 'phone', co
     if (week === 1) return `Hi ${name} — I noticed ${company} and wanted to connect. We help similar firms turn benefits into a talent advantage. Happy to share a brief if helpful.`;
     return `Hi ${name} — following up regarding ${theme.theme.toLowerCase()} for companies like ${company}. Happy to share a brief if helpful.`;
   }
-  // phone
   return `TALKING POINTS:\n• Reference ${company}'s situation\n• Lead with Week ${week} theme: ${theme.theme}\n• ${theme.description}\n• Ask an open-ended question\n• Offer a specific next step\n\nVOICEMAIL (≤20s):\n"Hi ${name}, this is [name] with OneDigital. Following up on ${theme.theme.toLowerCase()} — would love to connect briefly. I'll send a note as well."`;
 }
 
@@ -70,8 +71,18 @@ export default function CampaignContactsTable({ campaignName }: Props) {
       const accountIds = [...new Set(enrolled.map(c => c.account_id).filter(Boolean))] as string[];
       let accountMap = new Map<string, any>();
       if (accountIds.length > 0) {
-        const { data: accounts } = await supabase.from('accounts').select('id, name, domain, industry, employee_count, hq_state').in('id', accountIds);
+        const { data: accounts } = await supabase.from('accounts').select('id, name, domain, industry, employee_count, hq_state, hq_city, website, triggers, icp_class, high_intent, high_intent_reason, revenue_range, source').in('id', accountIds);
         for (const a of accounts || []) accountMap.set(a.id, a);
+      }
+
+      // Fetch company_scrape from accounts if available
+      let scrapeMap = new Map<string, any>();
+      if (accountIds.length > 0) {
+        // company_scrape might be stored on accounts or via account_briefs
+        const { data: briefs } = await supabase.from('account_briefs').select('account_id, brief_markdown').in('account_id', accountIds).order('generated_at', { ascending: false });
+        for (const b of briefs || []) {
+          if (!scrapeMap.has(b.account_id!)) scrapeMap.set(b.account_id!, b.brief_markdown);
+        }
       }
 
       return enrolled.map(c => {
@@ -89,6 +100,17 @@ export default function CampaignContactsTable({ campaignName }: Props) {
           account_name: acct.name || '—',
           industry: acct.industry || '',
           hq_state: acct.hq_state || '',
+          hq_city: acct.hq_city || '',
+          employee_count: acct.employee_count,
+          domain: acct.domain || '',
+          website: acct.website || '',
+          icp_class: acct.icp_class || '',
+          source: acct.source || '',
+          revenue_range: acct.revenue_range || '',
+          account_triggers: acct.triggers || {},
+          high_intent: acct.high_intent,
+          high_intent_reason: acct.high_intent_reason || '',
+          brief_markdown: scrapeMap.get(c.account_id || '') || null,
           triggers,
           pipeline_stage: c.pipeline_stage ?? 0,
           last_touch: c.last_touch || null,
@@ -129,12 +151,6 @@ export default function CampaignContactsTable({ campaignName }: Props) {
     else { setSortField(field); setSortDir('asc'); }
   };
 
-  const handleAction = async (contactId: string, action: 'email' | 'linkedin' | 'call') => {
-    await advancePipeline(contactId, action);
-    queryClient.invalidateQueries({ queryKey: ['campaign-contacts', campaignName] });
-    toast.success(`Pipeline updated: ${action}`);
-  };
-
   const openDraftModal = (contact: any, week: number, channel: 'email' | 'linkedin' | 'phone') => {
     setModalContactId(contact.id);
     setModalWeek(week);
@@ -154,7 +170,6 @@ export default function CampaignContactsTable({ campaignName }: Props) {
   const handleCopyAndAdvance = async () => {
     navigator.clipboard.writeText(modalContent);
     if (modalContactId) {
-      // Use per-channel tracking instead of full pipeline advance
       const channelKey = modalChannel === 'phone' ? 'phone' : modalChannel;
       await markChannelDone(modalContactId, modalWeek, channelKey as 'email' | 'linkedin' | 'phone');
       queryClient.invalidateQueries({ queryKey: ['campaign-contacts', campaignName] });
@@ -162,6 +177,12 @@ export default function CampaignContactsTable({ campaignName }: Props) {
     setCopied(true);
     toast.success('Copied & channel marked done!');
     setModalOpen(false);
+  };
+
+  const handleCheckboxToggle = async (contactId: string, week: number, channel: 'email' | 'linkedin' | 'phone') => {
+    await markChannelDone(contactId, week, channel);
+    queryClient.invalidateQueries({ queryKey: ['campaign-contacts', campaignName] });
+    toast.success(`Week ${week} ${channel} marked done`);
   };
 
   const toggleSelect = (id: string) => {
@@ -222,10 +243,10 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort('stage')}>
                   <span className="flex items-center gap-1">Stage <ArrowUpDown size={12} /></span>
                 </th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Progress</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort('nextTouch')}>
                   <span className="flex items-center gap-1">Next Touch <ArrowUpDown size={12} /></span>
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -238,6 +259,9 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                 const currentWeek = getCurrentWeekFromProgress(contact.dripProgress);
                 const completedWeeks = getCompletedWeeks(contact.dripProgress);
                 const progressPct = Math.round((completedWeeks / 12) * 100);
+
+                // Per-channel status for current week (for collapsed row indicators)
+                const currentWP = contact.dripProgress.find((p: DripWeekProgress) => p.week === currentWeek);
 
                 return (
                   <>
@@ -256,13 +280,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                         <div className="flex items-center gap-2">
                           <span>{contact.first_name} {contact.last_name}</span>
                           {contact.linkedin_url && (
-                            <a
-                              href={contact.linkedin_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="text-muted-foreground hover:text-primary transition-colors"
-                            >
+                            <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-muted-foreground hover:text-primary transition-colors">
                               <ExternalLink size={12} />
                             </a>
                           )}
@@ -275,130 +293,182 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                           {PIPELINE_STAGES[contact.pipeline_stage] || 'New'}
                         </Badge>
                       </td>
+                      {/* Channel status indicators on collapsed row */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <Linkedin size={12} className={currentWP?.liDone ? 'text-success' : 'text-muted-foreground/40'} />
+                            {currentWP?.liDone && <Check size={8} className="text-success -ml-1" />}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Mail size={12} className={currentWP?.emailDone ? 'text-success' : 'text-muted-foreground/40'} />
+                            {currentWP?.emailDone && <Check size={8} className="text-success -ml-1" />}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Phone size={12} className={currentWP?.phoneDone ? 'text-success' : 'text-muted-foreground/40'} />
+                            {currentWP?.phoneDone && <Check size={8} className="text-success -ml-1" />}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground ml-1">W{currentWeek}</span>
+                        </div>
+                      </td>
                       <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
                         {contact.next_touch ? new Date(contact.next_touch).toLocaleDateString() : '—'}
                         {isOverdue && ' ⚠'}
                       </td>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <div className="flex gap-1">
-                          {contact.email && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Email" onClick={() => handleAction(contact.id, 'email')}>
-                              <Mail size={12} />
-                            </Button>
-                          )}
-                          {contact.linkedin_url && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="LinkedIn" onClick={() => handleAction(contact.id, 'linkedin')}>
-                              <Linkedin size={12} />
-                            </Button>
-                          )}
-                          {contact.phone && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Call" onClick={() => handleAction(contact.id, 'call')}>
-                              <Phone size={12} />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
 
-                    {/* Expanded 12-week drip view */}
+                    {/* ── Expanded view ── */}
                     {isExpanded && (
-                      <tr key={`${contact.id}-drip`}>
+                      <tr key={`${contact.id}-expanded`}>
                         <td colSpan={8} className="p-0">
-                          <div className="bg-muted/20 border-t border-border px-6 py-4">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Calendar size={16} className="text-primary" />
-                              <h4 className="font-semibold text-sm text-foreground">12-Week Drip Workflow — {contact.first_name} {contact.last_name}</h4>
-                              <Badge variant="secondary" className="text-[10px]">Week {currentWeek} of 12</Badge>
-                            </div>
+                          <div className="bg-muted/20 border-t border-border px-6 py-5 space-y-5">
+                            
+                            {/* Company Overview */}
+                            <CompanyOverviewSection contact={contact} />
 
-                            {/* Progress bar */}
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                            {/* Trigger / Signal Chips */}
+                            <div className="bg-card rounded-lg border border-border p-4">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Zap size={14} className="text-primary" />
+                                <h4 className="font-semibold text-sm text-card-foreground">Growth Indicators</h4>
                               </div>
-                              <span className="text-xs text-muted-foreground font-medium">{progressPct}%</span>
+                              <SignalChips chips={buildChipsFromTriggers(contact.triggers)} />
                             </div>
 
-                            {/* Week cards grid */}
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                              {WEEK_THEMES.map(wt => {
-                                const weekProgress = contact.dripProgress.find((p: DripWeekProgress) => p.week === wt.week);
-                                const hasCall = isCallWeek(wt.week);
-                                const weekAllDone = weekProgress
-                                  ? weekProgress.liDone && weekProgress.emailDone && (!hasCall || weekProgress.phoneDone)
-                                  : false;
-                                const isCurrent = wt.week === currentWeek;
-                                const isPast = weekAllDone;
+                            {/* 12-Week Drip Workflow */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <Calendar size={16} className="text-primary" />
+                                <h4 className="font-semibold text-sm text-foreground">12-Week Drip Workflow</h4>
+                                <Badge variant="secondary" className="text-[10px]">Week {currentWeek} of 12</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mb-3">
+                                <span className="font-medium">Reason selected:</span> {contact.triggers.slice(0, 3).join(', ') || 'ICP fit'}
+                              </p>
 
-                                return (
-                                  <div
-                                    key={wt.week}
-                                    className={`rounded-lg border p-3 transition-all ${
-                                      isPast ? 'border-success/30 bg-success/5 opacity-70' :
-                                      isCurrent ? 'border-primary/40 bg-primary/5 ring-2 ring-primary/20' :
-                                      'border-border bg-card'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between mb-2">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                                          isPast ? 'bg-success text-success-foreground' :
+                              {/* Progress bar */}
+                              <div className="flex items-center gap-3 mb-4">
+                                <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                                </div>
+                                <span className="text-xs text-muted-foreground font-medium">{completedWeeks}/12 weeks</span>
+                              </div>
+
+                              {/* Week cards — matching ContactDetail layout */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {WEEK_THEMES.map(wt => {
+                                  const weekProgress = contact.dripProgress.find((p: DripWeekProgress) => p.week === wt.week);
+                                  const hasCall = isCallWeek(wt.week);
+                                  const weekAllDone = weekProgress
+                                    ? weekProgress.liDone && weekProgress.emailDone && (!hasCall || weekProgress.phoneDone)
+                                    : false;
+                                  const isCurrent = wt.week === currentWeek;
+
+                                  return (
+                                    <div
+                                      key={wt.week}
+                                      className={`rounded-lg border p-4 transition-all ${
+                                        weekAllDone ? 'border-success/30 bg-success/5 opacity-70' :
+                                        isCurrent ? 'border-primary/40 bg-primary/5 ring-2 ring-primary/20' :
+                                        'border-border bg-card'
+                                      }`}
+                                    >
+                                      {/* Week header */}
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                                          weekAllDone ? 'bg-success text-success-foreground' :
                                           isCurrent ? 'bg-primary text-primary-foreground' :
                                           'bg-muted text-muted-foreground'
                                         }`}>
-                                          {isPast ? <Check size={10} /> : wt.week}
+                                          {weekAllDone ? <Check size={12} /> : wt.week}
                                         </span>
-                                        <span className="text-xs font-semibold text-foreground">W{wt.week}</span>
+                                        <div>
+                                          <p className="text-sm font-semibold text-foreground">Week {wt.week}: {wt.theme}</p>
+                                          <p className="text-[10px] text-muted-foreground">{wt.description}</p>
+                                        </div>
                                       </div>
-                                      {isPast && (
-                                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-success/30 text-success">Done</Badge>
-                                      )}
-                                      {isCurrent && !isPast && (
-                                        <Badge variant="default" className="text-[9px] h-4 px-1.5">Current</Badge>
-                                      )}
-                                    </div>
 
-                                    <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">{wt.theme}</p>
+                                      {!contact.email && <p className="text-[10px] text-muted-foreground italic mt-2">No email on file — start with LinkedIn.</p>}
 
-                                    {/* Action buttons with per-channel completion status */}
-                                    <div className="flex gap-1">
-                                      {contact.linkedin_url && (
-                                        <Button
-                                          variant={weekProgress?.liDone ? 'ghost' : 'outline'}
-                                          size="sm"
-                                          className={`h-6 text-[10px] px-1.5 gap-0.5 ${weekProgress?.liDone ? 'opacity-50' : ''}`}
-                                          onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'linkedin'); }}
-                                        >
-                                          {weekProgress?.liDone ? <Check size={10} className="text-success" /> : <Linkedin size={10} />}
-                                          {wt.week === 1 ? 'Connect' : 'LI'}
-                                        </Button>
-                                      )}
-                                      {contact.email && (
-                                        <Button
-                                          variant={weekProgress?.emailDone ? 'ghost' : 'outline'}
-                                          size="sm"
-                                          className={`h-6 text-[10px] px-1.5 gap-0.5 ${weekProgress?.emailDone ? 'opacity-50' : ''}`}
-                                          onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'email'); }}
-                                        >
-                                          {weekProgress?.emailDone ? <Check size={10} className="text-success" /> : <Mail size={10} />}
-                                          Email
-                                        </Button>
-                                      )}
-                                      {hasCall && contact.phone && (
-                                        <Button
-                                          variant={weekProgress?.phoneDone ? 'ghost' : 'outline'}
-                                          size="sm"
-                                          className={`h-6 text-[10px] px-1.5 gap-0.5 ${weekProgress?.phoneDone ? 'opacity-50' : ''}`}
-                                          onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'phone'); }}
-                                        >
-                                          {weekProgress?.phoneDone ? <Check size={10} className="text-success" /> : <Phone size={10} />}
-                                          Call
-                                        </Button>
-                                      )}
+                                      {/* Channel rows with checkboxes */}
+                                      <div className="mt-3 space-y-2">
+                                        {/* LinkedIn */}
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                              weekProgress?.liDone
+                                                ? 'bg-success border-success text-success-foreground'
+                                                : 'border-primary/40 hover:border-primary'
+                                            }`}
+                                            onClick={(e) => { e.stopPropagation(); if (!weekProgress?.liDone) handleCheckboxToggle(contact.id, wt.week, 'linkedin'); }}
+                                            disabled={weekProgress?.liDone}
+                                          >
+                                            {weekProgress?.liDone && <Check size={10} />}
+                                          </button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={`flex-1 h-9 text-xs gap-1.5 justify-center ${weekProgress?.liDone ? 'opacity-50' : ''}`}
+                                            onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'linkedin'); }}
+                                          >
+                                            <Linkedin size={14} />
+                                            {wt.week === 1 ? 'Connect / Generate LinkedIn Message' : 'Generate LinkedIn Message'}
+                                          </Button>
+                                        </div>
+
+                                        {/* Email */}
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                              weekProgress?.emailDone
+                                                ? 'bg-success border-success text-success-foreground'
+                                                : 'border-primary/40 hover:border-primary'
+                                            }`}
+                                            onClick={(e) => { e.stopPropagation(); if (!weekProgress?.emailDone) handleCheckboxToggle(contact.id, wt.week, 'email'); }}
+                                            disabled={weekProgress?.emailDone}
+                                          >
+                                            {weekProgress?.emailDone && <Check size={10} />}
+                                          </button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={`flex-1 h-9 text-xs gap-1.5 justify-center ${weekProgress?.emailDone ? 'opacity-50' : ''}`}
+                                            onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'email'); }}
+                                          >
+                                            <Mail size={14} />
+                                            Generate Email
+                                          </Button>
+                                        </div>
+
+                                        {/* Phone (call weeks or always show) */}
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                              weekProgress?.phoneDone
+                                                ? 'bg-success border-success text-success-foreground'
+                                                : 'border-primary/40 hover:border-primary'
+                                            }`}
+                                            onClick={(e) => { e.stopPropagation(); if (!weekProgress?.phoneDone) handleCheckboxToggle(contact.id, wt.week, 'phone'); }}
+                                            disabled={weekProgress?.phoneDone}
+                                          >
+                                            {weekProgress?.phoneDone && <Check size={10} />}
+                                          </button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={`flex-1 h-9 text-xs gap-1.5 justify-center ${weekProgress?.phoneDone ? 'opacity-50' : ''}`}
+                                            onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'phone'); }}
+                                          >
+                                            <Phone size={14} />
+                                            Generate Phone Touch
+                                          </Button>
+                                          {!hasCall && <span className="text-[10px] text-muted-foreground italic">Optional</span>}
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -441,5 +511,86 @@ export default function CampaignContactsTable({ campaignName }: Props) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/* ── Company Overview sub-component ── */
+function CompanyOverviewSection({ contact }: { contact: any }) {
+  const [overviewOpen, setOverviewOpen] = useState(false);
+
+  const hasIntel = contact.brief_markdown || contact.account_triggers;
+
+  return (
+    <Collapsible open={overviewOpen} onOpenChange={setOverviewOpen}>
+      <div className="bg-card rounded-lg border border-border">
+        <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-accent/50 rounded-lg transition-colors">
+          <div className="flex items-center gap-2">
+            <Building2 size={14} className="text-primary" />
+            <h4 className="font-semibold text-sm text-card-foreground">Company Overview</h4>
+            {contact.brief_markdown && (
+              <Badge variant="secondary" className="text-[10px] gap-1"><Sparkles size={10} /> AI Enriched</Badge>
+            )}
+            {contact.high_intent && (
+              <Badge variant="secondary" className="text-[10px] gap-1 border-warning/30 text-warning">High Intent</Badge>
+            )}
+          </div>
+          <ChevronDown size={14} className={`text-muted-foreground transition-transform ${overviewOpen ? 'rotate-180' : ''}`} />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-4 pb-4 space-y-3">
+            {/* AI Brief */}
+            {contact.brief_markdown && (
+              <div>
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+                  {contact.brief_markdown.length > 600 ? contact.brief_markdown.slice(0, 600) + '…' : contact.brief_markdown}
+                </p>
+              </div>
+            )}
+
+            {/* Firmographics grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Industry</p>
+                <p className="text-foreground font-medium">{contact.industry || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Employees</p>
+                <p className="text-foreground font-medium">{contact.employee_count || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Source</p>
+                <p className="text-foreground font-medium">{contact.source || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">ICP Class</p>
+                <p className="text-foreground font-medium">{contact.icp_class || '—'}</p>
+              </div>
+            </div>
+
+            {contact.high_intent_reason && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">High Intent Reason</p>
+                <p className="text-sm text-foreground">{contact.high_intent_reason}</p>
+              </div>
+            )}
+
+            {/* Website link */}
+            {(contact.website || contact.domain) && (
+              <div className="flex items-center gap-2 text-xs">
+                <Globe size={12} className="text-muted-foreground" />
+                <a
+                  href={`https://${contact.website || contact.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  {contact.website || contact.domain}
+                </a>
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
   );
 }
