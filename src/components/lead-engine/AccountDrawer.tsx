@@ -23,6 +23,7 @@ import {
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import { detectPersona, PERSONA_LABELS, type PersonaTrack } from '@/lib/persona';
 import { matchIndustryKey, getIndustryLabel } from '@/lib/industry';
+import QuickAnalyze from '@/components/QuickAnalyze';
 
 interface AccountDrawerProps {
   lead: LeadWithAccount | null;
@@ -409,6 +410,27 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
           </div>
 
           <Separator />
+
+          {/* Quick Analyze */}
+          <QuickAnalyze
+            entityType="account"
+            entityId={account.id}
+            accountId={account.id}
+            linkedinUrl={primaryContact?.linkedin_url}
+            websiteUrl={account.website}
+            roleTitle={primaryContact?.title}
+            industry={account.industry}
+            employeeCount={account.employee_count}
+            region={account.hq_state}
+            domain={(account as any).domain || account.website}
+            companyName={account.name}
+            onTriggersUpdated={() => {
+              toast.success('Account triggers updated');
+            }}
+            onBriefGenerated={(brief) => {
+              setBriefMarkdown(brief);
+            }}
+          />
 
           {/* Contacts */}
           <div>

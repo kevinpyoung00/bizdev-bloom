@@ -20,6 +20,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
+import QuickAnalyze from '@/components/QuickAnalyze';
 
 function getEmployeeTier(count: string): string {
   const n = parseInt(count, 10);
@@ -368,6 +369,24 @@ export default function ContactDetail() {
             </CollapsibleContent>
           </div>
         </Collapsible>
+
+        {/* Quick Analyze */}
+        <QuickAnalyze
+          entityType="contact"
+          entityId={contact.id}
+          accountId={null}
+          linkedinUrl={contact.linkedInUrl}
+          websiteUrl={contact.website}
+          roleTitle={contact.title}
+          industry={contact.industry}
+          employeeCount={contact.employeeCount ? parseInt(contact.employeeCount, 10) : null}
+          region=""
+          domain={contact.website}
+          companyName={contact.company}
+          onTriggersUpdated={() => {
+            toast.success('Triggers updated');
+          }}
+        />
 
         {/* Additional Context (Notes to AI) */}
         {contact.manualNotesForAI && (
