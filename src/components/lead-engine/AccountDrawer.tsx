@@ -348,9 +348,12 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     );
                   })()}
                   {primaryContact.linkedin_url && (
-                    <button onClick={e => openExternal(primaryContact.linkedin_url, e)} className="text-xs text-primary flex items-center gap-1 hover:underline">
-                      <Linkedin size={12} /> LinkedIn
-                    </button>
+                    <>
+                      <button onClick={e => openExternal(primaryContact.linkedin_url, e)} className="text-xs text-primary flex items-center gap-1 hover:underline">
+                        <Linkedin size={12} /> LinkedIn
+                      </button>
+                      <a href={normalizeUrl(primaryContact.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground hover:text-primary ml-1" onClick={e => e.stopPropagation()}>(direct link)</a>
+                    </>
                   )}
                 </div>
               </div>
@@ -457,7 +460,12 @@ export default function AccountDrawer({ lead, open, onOpenChange }: AccountDrawe
                     <div className="flex gap-3 mt-2">
                       {c.email && <a href={`mailto:${c.email}`} className="text-xs text-primary flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}><Mail size={12} /> {c.email}</a>}
                       {c.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone size={12} /> {c.phone}</span>}
-                      {c.linkedin_url && <button onClick={e => openExternal(c.linkedin_url, e)} className="text-xs text-primary flex items-center gap-1 hover:underline"><Linkedin size={12} /> LinkedIn</button>}
+                      {c.linkedin_url && (
+                        <>
+                          <button onClick={e => openExternal(c.linkedin_url, e)} className="text-xs text-primary flex items-center gap-1 hover:underline"><Linkedin size={12} /> LinkedIn</button>
+                          <a href={normalizeUrl(c.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground hover:text-primary" onClick={e => e.stopPropagation()}>(direct)</a>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
