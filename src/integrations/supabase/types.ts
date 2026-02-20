@@ -343,11 +343,14 @@ export type Database = {
           import_log: Json | null
           is_primary: boolean | null
           last_name: string
+          last_touch: string | null
           linkedin_url: string | null
           location: string | null
           manual_triggers: Json
           match_key: string | null
+          next_touch: string | null
           phone: string | null
+          pipeline_stage: number
           pushed_to_crm_at: string | null
           role_start_date: string | null
           seniority: string | null
@@ -375,11 +378,14 @@ export type Database = {
           import_log?: Json | null
           is_primary?: boolean | null
           last_name: string
+          last_touch?: string | null
           linkedin_url?: string | null
           location?: string | null
           manual_triggers?: Json
           match_key?: string | null
+          next_touch?: string | null
           phone?: string | null
+          pipeline_stage?: number
           pushed_to_crm_at?: string | null
           role_start_date?: string | null
           seniority?: string | null
@@ -407,11 +413,14 @@ export type Database = {
           import_log?: Json | null
           is_primary?: boolean | null
           last_name?: string
+          last_touch?: string | null
           linkedin_url?: string | null
           location?: string | null
           manual_triggers?: Json
           match_key?: string | null
+          next_touch?: string | null
           phone?: string | null
+          pipeline_stage?: number
           pushed_to_crm_at?: string | null
           role_start_date?: string | null
           seniority?: string | null
