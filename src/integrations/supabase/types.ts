@@ -336,6 +336,7 @@ export type Database = {
           crm_record_url: string | null
           crm_status: string | null
           department: string | null
+          drip_progress: Json | null
           email: string | null
           enrichment_log: Json | null
           first_name: string
@@ -371,6 +372,7 @@ export type Database = {
           crm_record_url?: string | null
           crm_status?: string | null
           department?: string | null
+          drip_progress?: Json | null
           email?: string | null
           enrichment_log?: Json | null
           first_name: string
@@ -406,6 +408,7 @@ export type Database = {
           crm_record_url?: string | null
           crm_status?: string | null
           department?: string | null
+          drip_progress?: Json | null
           email?: string | null
           enrichment_log?: Json | null
           first_name?: string
