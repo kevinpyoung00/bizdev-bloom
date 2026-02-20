@@ -76,6 +76,7 @@ export function useBatchSendToContacts() {
         // Mark as pushed to CRM
         await supabase.from('contacts_le').update({
           pushed_to_crm_at: new Date().toISOString(),
+          crm_status: 'claimed',
         } as any).eq('id', contact.id);
 
         result.updated++;
@@ -86,6 +87,7 @@ export function useBatchSendToContacts() {
         await supabase.from('lead_queue')
           .update({
             pushed_to_crm_at: new Date().toISOString(),
+            status: 'in_crm',
           } as any)
           .eq('id', lead.id);
       }
@@ -98,6 +100,7 @@ export function useBatchSendToContacts() {
 
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['claimed-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-counts'] });
       toast.success(`Contacts ready: ${result.updated} updated, ${result.skipped} skipped`);
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`);
@@ -191,6 +194,7 @@ export function useBatchSendToCampaign() {
         const merged = mergeTags(existing, [campaignName]);
         await supabase.from('lead_queue').update({
           claim_status: 'in_campaign',
+          status: 'in_crm',
           campaign_tags: merged as any,
           pushed_to_crm_at: new Date().toISOString(),
         } as any).eq('id', row.id);
@@ -204,6 +208,7 @@ export function useBatchSendToCampaign() {
 
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['claimed-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-counts'] });
       toast.success(`${result.updated} contacts enrolled in "${campaignName}"`);
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`);
