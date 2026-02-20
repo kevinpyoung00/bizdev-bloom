@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Search, Mail, Linkedin, Phone, ArrowUpDown, Loader2, ExternalLink, ChevronDown, ChevronRight, Check, Copy, Calendar } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { usePipelineUpdate, PIPELINE_STAGES, PIPELINE_COLORS } from '@/hooks/usePipelineUpdate';
+import { usePipelineUpdate, PIPELINE_STAGES, PIPELINE_COLORS, getCurrentWeekFromProgress, getCompletedWeeks, type DripWeekProgress } from '@/hooks/usePipelineUpdate';
 import { inferBaselineTriggers } from '@/lib/triggers';
 import { WEEK_THEMES, getWeekTheme } from '@/lib/weekThemes';
 import { isCallWeek } from '@/types/crm';
@@ -38,7 +38,7 @@ function generateDraft(week: number, channel: 'email' | 'linkedin' | 'phone', co
 
 export default function CampaignContactsTable({ campaignName }: Props) {
   const queryClient = useQueryClient();
-  const { advancePipeline } = usePipelineUpdate();
+  const { advancePipeline, markChannelDone } = usePipelineUpdate();
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'name' | 'company' | 'stage' | 'nextTouch'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -58,7 +58,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contacts_le')
-        .select('id, first_name, last_name, title, email, phone, linkedin_url, account_id, campaign_tags, trigger_profile, auto_triggers, manual_triggers, pipeline_stage, last_touch, next_touch')
+        .select('id, first_name, last_name, title, email, phone, linkedin_url, account_id, campaign_tags, trigger_profile, auto_triggers, manual_triggers, pipeline_stage, last_touch, next_touch, drip_progress')
         .not('campaign_tags', 'is', null);
       if (error) throw error;
 
@@ -83,6 +83,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
             employee_count: acct.employee_count, region: acct.hq_state, domain: acct.domain,
           });
         }
+        const dripProgress: DripWeekProgress[] = Array.isArray((c as any).drip_progress) ? (c as any).drip_progress : [];
         return {
           ...c,
           account_name: acct.name || '—',
@@ -92,6 +93,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
           pipeline_stage: c.pipeline_stage ?? 0,
           last_touch: c.last_touch || null,
           next_touch: c.next_touch || null,
+          dripProgress,
         };
       });
     },
@@ -152,11 +154,13 @@ export default function CampaignContactsTable({ campaignName }: Props) {
   const handleCopyAndAdvance = async () => {
     navigator.clipboard.writeText(modalContent);
     if (modalContactId) {
-      const actionMap = { email: 'email' as const, linkedin: 'linkedin' as const, phone: 'call' as const };
-      await handleAction(modalContactId, actionMap[modalChannel]);
+      // Use per-channel tracking instead of full pipeline advance
+      const channelKey = modalChannel === 'phone' ? 'phone' : modalChannel;
+      await markChannelDone(modalContactId, modalWeek, channelKey as 'email' | 'linkedin' | 'phone');
+      queryClient.invalidateQueries({ queryKey: ['campaign-contacts', campaignName] });
     }
     setCopied(true);
-    toast.success('Copied & pipeline advanced!');
+    toast.success('Copied & channel marked done!');
     setModalOpen(false);
   };
 
@@ -186,9 +190,6 @@ export default function CampaignContactsTable({ campaignName }: Props) {
       </div>
     );
   }
-
-  // Determine current week from pipeline_stage
-  const getCurrentWeek = (stage: number) => Math.max(1, stage + 1);
 
   return (
     <div className="space-y-3">
@@ -234,7 +235,9 @@ export default function CampaignContactsTable({ campaignName }: Props) {
               {filtered.map(contact => {
                 const isOverdue = contact.next_touch && contact.next_touch.split('T')[0] <= today;
                 const isExpanded = expandedContactId === contact.id;
-                const currentWeek = getCurrentWeek(contact.pipeline_stage);
+                const currentWeek = getCurrentWeekFromProgress(contact.dripProgress);
+                const completedWeeks = getCompletedWeeks(contact.dripProgress);
+                const progressPct = Math.round((completedWeeks / 12) * 100);
 
                 return (
                   <>
@@ -311,17 +314,21 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                             {/* Progress bar */}
                             <div className="flex items-center gap-3 mb-4">
                               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${Math.round((currentWeek / 12) * 100)}%` }} />
+                                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progressPct}%` }} />
                               </div>
-                              <span className="text-xs text-muted-foreground font-medium">{Math.round((currentWeek / 12) * 100)}%</span>
+                              <span className="text-xs text-muted-foreground font-medium">{progressPct}%</span>
                             </div>
 
                             {/* Week cards grid */}
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                               {WEEK_THEMES.map(wt => {
-                                const isPast = wt.week < currentWeek;
-                                const isCurrent = wt.week === currentWeek;
+                                const weekProgress = contact.dripProgress.find((p: DripWeekProgress) => p.week === wt.week);
                                 const hasCall = isCallWeek(wt.week);
+                                const weekAllDone = weekProgress
+                                  ? weekProgress.liDone && weekProgress.emailDone && (!hasCall || weekProgress.phoneDone)
+                                  : false;
+                                const isCurrent = wt.week === currentWeek;
+                                const isPast = weekAllDone;
 
                                 return (
                                   <div
@@ -343,43 +350,49 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                                         </span>
                                         <span className="text-xs font-semibold text-foreground">W{wt.week}</span>
                                       </div>
-                                      {isCurrent && (
+                                      {isPast && (
+                                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-success/30 text-success">Done</Badge>
+                                      )}
+                                      {isCurrent && !isPast && (
                                         <Badge variant="default" className="text-[9px] h-4 px-1.5">Current</Badge>
                                       )}
                                     </div>
 
                                     <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">{wt.theme}</p>
 
-                                    {/* Action buttons */}
+                                    {/* Action buttons with per-channel completion status */}
                                     <div className="flex gap-1">
                                       {contact.linkedin_url && (
                                         <Button
-                                          variant={isPast ? 'ghost' : 'outline'}
+                                          variant={weekProgress?.liDone ? 'ghost' : 'outline'}
                                           size="sm"
-                                          className="h-6 text-[10px] px-1.5 gap-0.5"
+                                          className={`h-6 text-[10px] px-1.5 gap-0.5 ${weekProgress?.liDone ? 'opacity-50' : ''}`}
                                           onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'linkedin'); }}
                                         >
-                                          <Linkedin size={10} /> {wt.week === 1 ? 'Connect' : 'LI'}
+                                          {weekProgress?.liDone ? <Check size={10} className="text-success" /> : <Linkedin size={10} />}
+                                          {wt.week === 1 ? 'Connect' : 'LI'}
                                         </Button>
                                       )}
                                       {contact.email && (
                                         <Button
-                                          variant={isPast ? 'ghost' : 'outline'}
+                                          variant={weekProgress?.emailDone ? 'ghost' : 'outline'}
                                           size="sm"
-                                          className="h-6 text-[10px] px-1.5 gap-0.5"
+                                          className={`h-6 text-[10px] px-1.5 gap-0.5 ${weekProgress?.emailDone ? 'opacity-50' : ''}`}
                                           onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'email'); }}
                                         >
-                                          <Mail size={10} /> Email
+                                          {weekProgress?.emailDone ? <Check size={10} className="text-success" /> : <Mail size={10} />}
+                                          Email
                                         </Button>
                                       )}
                                       {hasCall && contact.phone && (
                                         <Button
-                                          variant={isPast ? 'ghost' : 'outline'}
+                                          variant={weekProgress?.phoneDone ? 'ghost' : 'outline'}
                                           size="sm"
-                                          className="h-6 text-[10px] px-1.5 gap-0.5"
+                                          className={`h-6 text-[10px] px-1.5 gap-0.5 ${weekProgress?.phoneDone ? 'opacity-50' : ''}`}
                                           onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'phone'); }}
                                         >
-                                          <Phone size={10} /> Call
+                                          {weekProgress?.phoneDone ? <Check size={10} className="text-success" /> : <Phone size={10} />}
+                                          Call
                                         </Button>
                                       )}
                                     </div>
@@ -421,7 +434,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                 {copied ? <><Check size={14} className="mr-1" /> Copied</> : <><Copy size={14} className="mr-1" /> Copy</>}
               </Button>
               <Button size="sm" onClick={handleCopyAndAdvance}>
-                <Copy size={14} className="mr-1" /> Copy & Advance Pipeline
+                <Copy size={14} className="mr-1" /> Copy & Mark Done
               </Button>
             </div>
           </div>
