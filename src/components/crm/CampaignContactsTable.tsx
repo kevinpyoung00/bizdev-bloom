@@ -15,6 +15,7 @@ import { isCallWeek } from '@/types/crm';
 import { toast } from 'sonner';
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
 import { normalizeUrl, formatTelHref, renderReason } from '@/lib/normalizeUrl';
+import { openExternal } from '@/lib/openExternal';
 import { useGenerateBrief } from '@/hooks/useAIGeneration';
 
 interface Props {
@@ -295,9 +296,9 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                         <div className="flex items-center gap-2">
                           <span>{contact.first_name} {contact.last_name}</span>
                           {contact.linkedin_url && (
-                            <a href={normalizeUrl(contact.linkedin_url)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-muted-foreground hover:text-primary transition-colors">
+                            <button onClick={e => openExternal(contact.linkedin_url, e)} className="text-muted-foreground hover:text-primary transition-colors" title="Open LinkedIn">
                               <ExternalLink size={12} />
-                            </a>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -543,15 +544,12 @@ function ActionBar({ contact }: { contact: any }) {
     <div className="bg-card rounded-lg border border-border p-3">
       <div className="flex items-center gap-2 flex-wrap">
         {contact.linkedin_url && (
-          <a
-            href={normalizeUrl(contact.linkedin_url)}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
+          <button
+            onClick={e => openExternal(contact.linkedin_url, e)}
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
             <Linkedin size={13} /> Open LinkedIn
-          </a>
+          </button>
         )}
         {contact.email && (
           <a
