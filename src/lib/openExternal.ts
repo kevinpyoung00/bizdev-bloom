@@ -1,8 +1,10 @@
 import { normalizeUrl } from '@/lib/normalizeUrl';
+import { toast } from 'sonner';
 
 /**
- * Open an external URL in a new browser tab, breaking out of any iframe context.
- * Falls back gracefully if cross-origin restrictions prevent window.top access.
+ * Open an external URL in a new browser tab.
+ * MUST be called synchronously from a user click handler.
+ * If the browser blocks the popup, copies URL to clipboard and notifies user.
  */
 export function openExternal(url: string | null | undefined, e?: React.MouseEvent) {
   if (e) {
@@ -11,24 +13,16 @@ export function openExternal(url: string | null | undefined, e?: React.MouseEven
   }
   const normalized = normalizeUrl(url);
   if (!normalized) return;
-  
-  // Try window.top first (escapes iframe), fall back to window.open
-  try {
-    const w = window.top;
-    if (w && w !== window) {
-      w.open(normalized, '_blank');
-      return;
-    }
-  } catch {
-    // Cross-origin — top is inaccessible, fall back
+
+  // Use window.open directly — must be synchronous from click handler
+  const win = window.open(normalized, '_blank', 'noopener,noreferrer');
+
+  if (!win) {
+    // Popup was blocked — copy URL to clipboard as fallback
+    navigator.clipboard.writeText(normalized).then(() => {
+      toast.info('Popup blocked — URL copied to clipboard. Paste in a new tab.', { duration: 5000 });
+    }).catch(() => {
+      toast.error(`Popup blocked. Open manually: ${normalized}`, { duration: 8000 });
+    });
   }
-  
-  // Fallback: create a temporary <a> on the parent document
-  const a = document.createElement('a');
-  a.href = normalized;
-  a.target = '_blank';
-  a.rel = 'noopener noreferrer';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
 }

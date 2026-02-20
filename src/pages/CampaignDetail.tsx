@@ -172,6 +172,9 @@ export default function CampaignDetail() {
                         <Linkedin size={12} /> LI
                       </Button>
                     )}
+                    {c.linkedin_url && (
+                      <a href={normalizeUrl(c.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground hover:text-primary self-center" onClick={e => e.stopPropagation()}>↗</a>
+                    )}
                     {c.phone && (
                       <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleAction(c.id, 'call')}>
                         <Phone size={12} /> Call
@@ -260,9 +263,12 @@ export default function CampaignDetail() {
                             </Button>
                           )}
                           {c.linkedin_url && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Open LinkedIn" onClick={(e) => { openExternal(c.linkedin_url, e); handleAction(c.id, 'linkedin'); }}>
-                              <Linkedin size={12} />
-                            </Button>
+                            <>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Open LinkedIn" onClick={(e) => { openExternal(c.linkedin_url, e); handleAction(c.id, 'linkedin'); }}>
+                                <Linkedin size={12} />
+                              </Button>
+                              <a href={normalizeUrl(c.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground hover:text-primary" onClick={e => e.stopPropagation()} title="Direct LinkedIn link">↗</a>
+                            </>
                           )}
                           {c.phone && (
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Generate Call" onClick={() => handleAction(c.id, 'call')}>

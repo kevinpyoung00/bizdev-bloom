@@ -296,9 +296,14 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                         <div className="flex items-center gap-2">
                           <span>{contact.first_name} {contact.last_name}</span>
                           {contact.linkedin_url && (
-                            <button onClick={e => openExternal(contact.linkedin_url, e)} className="text-muted-foreground hover:text-primary transition-colors" title="Open LinkedIn">
-                              <ExternalLink size={12} />
-                            </button>
+                            <>
+                              <button onClick={e => openExternal(contact.linkedin_url, e)} className="text-muted-foreground hover:text-primary transition-colors" title="Open LinkedIn">
+                                <ExternalLink size={12} />
+                              </button>
+                              <a href={normalizeUrl(contact.linkedin_url)} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" title="LinkedIn (direct)" onClick={e => e.stopPropagation()}>
+                                <Linkedin size={12} />
+                              </a>
+                            </>
                           )}
                         </div>
                       </td>

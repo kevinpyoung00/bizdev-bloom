@@ -422,9 +422,12 @@ export default function ContactDetail() {
               )}
             </div>
             {contact.linkedInUrl && (
-              <button onClick={e => openExternal(contact.linkedInUrl, e)} className="text-primary hover:text-primary/80 text-xs flex items-center gap-1">
-                <Linkedin size={12} /> LinkedIn Profile <ExternalLink size={10} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={e => openExternal(contact.linkedInUrl, e)} className="text-primary hover:text-primary/80 text-xs flex items-center gap-1">
+                  <Linkedin size={12} /> LinkedIn Profile <ExternalLink size={10} />
+                </button>
+                <a href={normalizeUrl(contact.linkedInUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground hover:text-primary" onClick={e => e.stopPropagation()}>(direct link)</a>
+              </div>
             )}
           </div>
 
