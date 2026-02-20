@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCrm } from '@/store/CrmContext';
 import Layout from '@/components/crm/Layout';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ const emptyPresets = (): WeekPreset[] => Array.from({ length: 12 }, (_, i) => ({
 export default function Campaigns() {
   const { campaigns, contacts, addCampaign, updateCampaign, deleteCampaign } = useCrm();
   const { getCountFor } = useCampaignCounts();
+  const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -79,7 +81,7 @@ export default function Campaigns() {
             const dbCount = getCountFor(campaign.name);
             const contactCount = crmCount + dbCount;
             return (
-              <div key={campaign.id} className="bg-card rounded-lg border border-border p-5 hover:shadow-sm transition-all">
+              <div key={campaign.id} className="bg-card rounded-lg border border-border p-5 hover:shadow-sm transition-all cursor-pointer" onClick={() => navigate(`/campaigns/${encodeURIComponent(campaign.name)}`)}>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className="p-2 rounded-lg bg-primary/10">
@@ -91,10 +93,10 @@ export default function Campaigns() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(campaign)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); openEdit(campaign); }}>
                       <Edit2 size={12} />
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteCampaign(campaign.id)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={(e) => { e.stopPropagation(); deleteCampaign(campaign.id); }}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
