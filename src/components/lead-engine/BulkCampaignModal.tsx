@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useCrm } from '@/store/CrmContext';
+import { mergeTags } from '@/lib/upsertContact';
 import type { TriggerTag } from '@/types/bizdev';
 
 const DEFAULT_TRIGGERS = [
@@ -73,11 +74,12 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
   };
 
   const handleAdd = async () => {
-    let targetCampaignId = campaignId;
+    let campaignName = '';
 
-    // If creating a new campaign
     if (mode === 'create') {
       if (!newName.trim()) { toast.error('Enter a campaign name'); return; }
+      campaignName = newName.trim();
+
       const triggerTags: TriggerTag[] = Array.from(selectedTriggers).map(label => ({
         label,
         source: 'manual' as const,
@@ -94,9 +96,8 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
         }
       }
 
-      // Create campaign in CRM context with timestamp in name
       const timestamp = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      const campaignDisplayName = `${newName.trim()} — ${timestamp}`;
+      const campaignDisplayName = `${campaignName} — ${timestamp}`;
 
       addCampaign({
         name: campaignDisplayName,
@@ -112,55 +113,58 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
         active: true,
       });
 
-      targetCampaignId = campaignDisplayName;
+      campaignName = campaignDisplayName;
     } else {
-      if (!targetCampaignId) { toast.error('Select a campaign'); return; }
+      if (!campaignId) { toast.error('Select a campaign'); return; }
+      const found = campaigns.find(c => c.id === campaignId);
+      campaignName = found?.name || campaignId;
     }
 
     setProcessing(true);
     try {
-      const { data: leads } = await supabase.from('lead_queue').select('id, account_id').in('id', selectedLeadIds);
+      // Get leads and their contacts
+      const { data: leads } = await supabase.from('lead_queue').select('id, account_id, campaign_tags').in('id', selectedLeadIds);
       if (!leads || leads.length === 0) { toast.error('No leads found'); setProcessing(false); return; }
 
       const accountIds = leads.map(l => l.account_id).filter(Boolean) as string[];
 
       const { data: contacts } = await supabase.from('contacts_le')
-        .select('id, first_name, last_name, email, trigger_profile, campaign_batch_id, account_id')
+        .select('id, first_name, last_name, email, account_id, campaign_tags')
         .in('account_id', accountIds);
 
       if (!contacts || contacts.length === 0) { toast.error('No contacts found for selected leads'); setProcessing(false); return; }
 
-      const snapshots = contacts.map(c => ({
-        account_id: c.account_id,
-        contact_id: c.id,
-        channel: 'campaign_membership',
-        body: JSON.stringify({
-          campaign_id: targetCampaignId,
-          campaign_name: mode === 'create' ? newName.trim() : campaigns.find(c2 => c2.id === targetCampaignId)?.name,
-          trigger_profile_snapshot: c.trigger_profile,
-          campaign_batch_id: c.campaign_batch_id,
-          triggers_selected: mode === 'create' ? Array.from(selectedTriggers) : [],
-          added_at: new Date().toISOString(),
-        }),
-        week_number: 0,
-        persona: null,
-        industry_key: null,
-      }));
+      // Update contacts: merge campaign_tags, set pushed_to_crm_at
+      for (const c of contacts) {
+        const existing = ((c as any).campaign_tags || []) as string[];
+        const merged = mergeTags(existing, [campaignName]);
+        await supabase.from('contacts_le').update({
+          campaign_tags: merged as any,
+          pushed_to_crm_at: new Date().toISOString(),
+          campaign_batch_id: campaignName,
+        } as any).eq('id', c.id);
+      }
 
-      const { error } = await supabase.from('message_snapshots').insert(snapshots as any);
-      if (error) throw error;
-
-      await supabase.from('lead_queue')
-        .update({ claim_status: 'in_campaign', status: 'in_campaign' } as any)
-        .in('id', selectedLeadIds);
+      // Update leads: merge campaign_tags, set status
+      for (const l of leads) {
+        const existing = ((l as any).campaign_tags || []) as string[];
+        const merged = mergeTags(existing, [campaignName]);
+        await supabase.from('lead_queue').update({
+          claim_status: 'in_campaign',
+          status: 'in_campaign',
+          campaign_tags: merged as any,
+          pushed_to_crm_at: new Date().toISOString(),
+        } as any).eq('id', l.id);
+      }
 
       setResult({ added: contacts.length });
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
-      toast.success(`${contacts.length} contacts added to campaign`);
+      toast.success(`${contacts.length} contacts enrolled in "${campaignName}"`);
 
       await supabase.from('audit_log').insert({
-        actor: 'user', action: 'bulk_add_campaign', entity_type: 'contacts_le',
-        details: { campaign_id: targetCampaignId, contacts: contacts.length, leads: selectedLeadIds.length },
+        actor: 'user', action: 'bulk_add_campaign',
+        entity_type: 'contacts_le',
+        details: { campaign_name: campaignName, contacts: contacts.length, leads: selectedLeadIds.length },
       });
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`);
@@ -193,17 +197,16 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
         {result ? (
           <div className="text-center py-6 space-y-3">
             <CheckCircle2 size={40} className="mx-auto text-primary" />
-            <p className="text-sm text-foreground font-medium">Added to campaign</p>
-            <p className="text-xs text-muted-foreground">{result.added} contacts with trigger profiles preserved</p>
+            <p className="text-sm text-foreground font-medium">Enrolled in campaign</p>
+            <p className="text-xs text-muted-foreground">{result.added} contacts with campaign tags updated</p>
             <Button size="sm" onClick={handleClose}>Done</Button>
           </div>
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Add <Badge variant="secondary" className="text-[10px]">{selectedLeadIds.length} leads</Badge> to a 12-week drip campaign.
+              Add <Badge variant="secondary" className="text-[10px]">{selectedLeadIds.length} leads</Badge> to a campaign.
             </p>
 
-            {/* Mode toggle */}
             <div className="flex gap-2">
               <Button size="sm" variant={mode === 'select' ? 'default' : 'outline'} onClick={() => setMode('select')}>
                 Select Existing
@@ -242,7 +245,6 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
                   />
                 </div>
 
-                {/* Trigger selection */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Tag size={14} className="text-primary" />
@@ -288,7 +290,7 @@ export default function BulkCampaignModal({ open, onOpenChange, selectedLeadIds,
               <Button variant="outline" size="sm" onClick={handleClose}>Cancel</Button>
               <Button size="sm" onClick={handleAdd} disabled={processing}>
                 {processing ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
-                {mode === 'create' ? 'Create & Add' : 'Add to Campaign'}
+                {mode === 'create' ? 'Create & Enroll' : 'Enroll in Campaign'}
               </Button>
             </div>
           </div>

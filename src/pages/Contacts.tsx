@@ -7,11 +7,16 @@ import ImportContacts from '@/components/crm/ImportContacts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Download, ArrowUpDown, Upload, ExternalLink, Linkedin, Sparkles, Loader2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Search, Download, ArrowUpDown, Upload, ExternalLink, Linkedin, Sparkles, Loader2, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ContactStatus, getContactProgress } from '@/types/crm';
 import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import ContactsCampaignModal from '@/components/lead-engine/ContactsCampaignModal';
 
 const statuses: (ContactStatus | 'All')[] = ['All', 'Unworked', 'In Sequence', 'Warm', 'Hot', 'Disqualified'];
 
@@ -24,9 +29,29 @@ export default function Contacts() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ContactStatus | 'All'>('All');
   const [campaignFilter, setCampaignFilter] = useState('All');
+  const [batchFilter, setBatchFilter] = useState('All');
   const [sortField, setSortField] = useState<'name' | 'company' | 'week' | 'nextTouch'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [bulkEnriching, setBulkEnriching] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+
+  // Fetch DB contacts for batch info
+  const { data: dbContacts = [] } = useQuery({
+    queryKey: ['contacts-le-batches'],
+    queryFn: async () => {
+      const { data } = await supabase.from('contacts_le').select('id, batch_id, campaign_tags').not('batch_id', 'is', null);
+      return (data || []) as { id: string; batch_id: string; campaign_tags: string[] }[];
+    },
+  });
+
+  const distinctBatches = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of dbContacts) {
+      if (c.batch_id) set.add(c.batch_id);
+    }
+    return Array.from(set);
+  }, [dbContacts]);
 
   const unenrichedCount = useMemo(() => contacts.filter(c => !c.companyScrape?.scrapedAt && c.company).length, [contacts]);
 
@@ -61,6 +86,11 @@ export default function Contacts() {
     }
     if (statusFilter !== 'All') list = list.filter(c => c.status === statusFilter);
     if (campaignFilter !== 'All') list = list.filter(c => c.campaignId === campaignFilter);
+    // Batch filter — match by contact id in dbContacts
+    if (batchFilter !== 'All') {
+      const batchContactIds = new Set(dbContacts.filter(dc => dc.batch_id === batchFilter).map(dc => dc.id));
+      list = list.filter(c => batchContactIds.has(c.id));
+    }
 
     list = [...list].sort((a, b) => {
       let cmp = 0;
@@ -73,7 +103,7 @@ export default function Contacts() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return list;
-  }, [contacts, search, statusFilter, campaignFilter, sortField, sortDir]);
+  }, [contacts, search, statusFilter, campaignFilter, batchFilter, sortField, sortDir, dbContacts]);
 
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -91,6 +121,21 @@ export default function Contacts() {
     URL.revokeObjectURL(url);
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(c => c.id)));
+  };
+
+  const allSelected = filtered.length > 0 && selectedIds.size === filtered.length;
+
   const today = new Date().toISOString().split('T')[0];
 
   return (
@@ -101,7 +146,13 @@ export default function Contacts() {
             <h1 className="text-2xl font-bold text-foreground">Contacts</h1>
             <p className="text-sm text-muted-foreground">{filtered.length} of {contacts.length} contacts</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {selectedIds.size > 0 && (
+              <Button size="sm" variant="outline" onClick={() => setCampaignModalOpen(true)}>
+                <Users size={16} className="mr-1" /> Add Selected to Campaign
+                <Badge variant="secondary" className="ml-1 text-[10px]">{selectedIds.size}</Badge>
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={exportCsv}><Download size={16} className="mr-1" /> Export</Button>
             <Button variant="outline" size="sm" onClick={() => setShowImport(true)}><Upload size={16} className="mr-1" /> Import</Button>
             {unenrichedCount > 0 && (
@@ -130,6 +181,17 @@ export default function Contacts() {
               {campaigns.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          {distinctBatches.length > 0 && (
+            <Select value={batchFilter} onValueChange={setBatchFilter}>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="All Batches" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Batches</SelectItem>
+                {distinctBatches.map(b => (
+                  <SelectItem key={b} value={b}>{b.slice(0, 8)}…</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Table */}
@@ -138,6 +200,9 @@ export default function Contacts() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
+                  <th className="px-3 py-3 w-8">
+                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
+                  </th>
                   {[
                     { key: 'name' as const, label: 'Name' },
                     { key: 'company' as const, label: 'Company' },
@@ -161,7 +226,7 @@ export default function Contacts() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={9} className="text-center py-12 text-muted-foreground">No contacts found. Add your first contact to get started.</td></tr>
+                  <tr><td colSpan={10} className="text-center py-12 text-muted-foreground">No contacts found. Add your first contact to get started.</td></tr>
                 )}
                 {filtered.map(contact => {
                   const campaign = campaigns.find(c => c.id === contact.campaignId);
@@ -170,10 +235,12 @@ export default function Contacts() {
                   return (
                     <tr
                       key={contact.id}
-                      onClick={() => navigate(`/contacts/${contact.id}`)}
-                      className="border-b border-border hover:bg-muted/30 cursor-pointer transition-colors"
+                      className={`border-b border-border hover:bg-muted/30 cursor-pointer transition-colors ${selectedIds.has(contact.id) ? 'bg-accent/50' : ''}`}
                     >
-                      <td className="px-4 py-3 font-medium text-foreground">
+                      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                        <Checkbox checked={selectedIds.has(contact.id)} onCheckedChange={() => toggleSelect(contact.id)} />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-foreground" onClick={() => navigate(`/contacts/${contact.id}`)}>
                         <div className="flex items-center gap-2">
                           <span>{contact.firstName} {contact.lastName}</span>
                           {contact.linkedInUrl && (
@@ -190,7 +257,7 @@ export default function Contacts() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-foreground">
+                      <td className="px-4 py-3 text-foreground" onClick={() => navigate(`/contacts/${contact.id}`)}>
                         {contact.company ? (
                           <a
                             href={`https://www.google.com/search?q=${encodeURIComponent(contact.company)}`}
@@ -233,6 +300,12 @@ export default function Contacts() {
 
         <ContactForm open={showForm} onOpenChange={setShowForm} />
         <ImportContacts open={showImport} onOpenChange={setShowImport} />
+        <ContactsCampaignModal
+          open={campaignModalOpen}
+          onOpenChange={setCampaignModalOpen}
+          selectedContactIds={Array.from(selectedIds)}
+          onComplete={() => setSelectedIds(new Set())}
+        />
       </div>
     </Layout>
   );
