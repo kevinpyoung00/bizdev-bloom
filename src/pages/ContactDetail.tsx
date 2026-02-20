@@ -383,6 +383,10 @@ export default function ContactDetail() {
           region=""
           domain={contact.website}
           companyName={contact.company}
+          firstName={contact.firstName}
+          lastName={contact.lastName}
+          email={contact.email}
+          phone={contact.phone}
           onTriggersUpdated={() => {
             toast.success('Triggers updated');
           }}
