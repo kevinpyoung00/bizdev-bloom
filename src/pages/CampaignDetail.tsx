@@ -5,32 +5,19 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowLeft, Mail, Linkedin, Phone, Search, Edit2 } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Mail, Linkedin, Phone, Search, Edit2, Clock } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useState, useMemo } from 'react';
-import { inferBaselineTriggers, mergeTriggerSets } from '@/lib/triggers';
-
-const STAGE_LABELS: Record<number, string> = {
-  0: 'New',
-  1: 'Emailed',
-  2: 'LinkedIn',
-  3: 'Called',
-  4: 'Meeting',
-};
-const STAGE_COLORS: Record<number, string> = {
-  0: 'bg-muted text-muted-foreground',
-  1: 'bg-primary/10 text-primary',
-  2: 'bg-info/10 text-info',
-  3: 'bg-warning/10 text-warning',
-  4: 'bg-success/10 text-success',
-};
+import { inferBaselineTriggers } from '@/lib/triggers';
+import { usePipelineUpdate, PIPELINE_STAGES, PIPELINE_COLORS } from '@/hooks/usePipelineUpdate';
+import { toast } from 'sonner';
 
 export default function CampaignDetail() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { campaigns, updateCampaign } = useCrm();
+  const { advancePipeline } = usePipelineUpdate();
   const decodedName = decodeURIComponent(name || '');
   const campaign = campaigns.find(c => c.name === decodedName);
 
@@ -41,40 +28,31 @@ export default function CampaignDetail() {
   const { data: contacts = [], isLoading } = useQuery({
     queryKey: ['campaign-contacts', decodedName],
     queryFn: async () => {
-      // Fetch all contacts with campaign_tags, filter in JS for array containment
       const { data, error } = await supabase
         .from('contacts_le')
-        .select('id, first_name, last_name, title, email, phone, linkedin_url, account_id, campaign_tags, trigger_profile, auto_triggers, manual_triggers, batch_id')
+        .select('id, first_name, last_name, title, email, phone, linkedin_url, account_id, campaign_tags, trigger_profile, auto_triggers, manual_triggers, batch_id, pipeline_stage, last_touch, next_touch')
         .not('campaign_tags', 'is', null);
       if (error) throw error;
 
-      // Filter to contacts whose campaign_tags includes our campaign name
       const enrolled = (data || []).filter(c => {
         const tags = (c.campaign_tags || []) as string[];
         return tags.includes(decodedName);
       });
 
-      // Fetch account info for enrolled contacts
       const accountIds = [...new Set(enrolled.map(c => c.account_id).filter(Boolean))] as string[];
       let accountMap = new Map<string, any>();
       if (accountIds.length > 0) {
         const { data: accounts } = await supabase.from('accounts').select('id, name, domain, industry, employee_count, hq_state').in('id', accountIds);
-        for (const a of accounts || []) {
-          accountMap.set(a.id, a);
-        }
+        for (const a of accounts || []) accountMap.set(a.id, a);
       }
 
       return enrolled.map(c => {
         const acct = accountMap.get(c.account_id || '') || {};
-        // Ensure triggers are never empty
         let triggers = [...(c.trigger_profile as string[] || []), ...(c.auto_triggers as string[] || []), ...(c.manual_triggers as string[] || [])];
         if (triggers.length === 0) {
           triggers = inferBaselineTriggers({
-            role_title: c.title,
-            industry: acct.industry,
-            employee_count: acct.employee_count,
-            region: acct.hq_state,
-            domain: acct.domain,
+            role_title: c.title, industry: acct.industry,
+            employee_count: acct.employee_count, region: acct.hq_state, domain: acct.domain,
           });
         }
         return {
@@ -84,7 +62,9 @@ export default function CampaignDetail() {
           employee_count: acct.employee_count,
           hq_state: acct.hq_state || '',
           triggers,
-          pipeline_stage: 0, // Default since column doesn't exist yet
+          pipeline_stage: (c as any).pipeline_stage ?? 0,
+          last_touch: (c as any).last_touch || null,
+          next_touch: (c as any).next_touch || null,
         };
       });
     },
@@ -106,10 +86,25 @@ export default function CampaignDetail() {
     if (stageFilter !== 'all') {
       list = list.filter(c => c.pipeline_stage === stageFilter);
     }
+    // Sort by next_touch asc (nulls last)
+    list = [...list].sort((a, b) => {
+      if (!a.next_touch && !b.next_touch) return 0;
+      if (!a.next_touch) return 1;
+      if (!b.next_touch) return -1;
+      return a.next_touch < b.next_touch ? -1 : 1;
+    });
     return list;
   }, [contacts, search, stageFilter]);
 
-  const todaysTasks = useMemo(() => contacts.filter(() => true).slice(0, 5), [contacts]);
+  const todaysTasks = useMemo(() =>
+    contacts.filter(c => c.next_touch && c.next_touch.split('T')[0] <= today),
+    [contacts, today]
+  );
+
+  const handleAction = async (contactId: string, action: 'email' | 'linkedin' | 'call') => {
+    await advancePipeline(contactId, action);
+    toast.success(`Pipeline updated: ${action}`);
+  };
 
   if (!campaign) {
     return (
@@ -153,29 +148,36 @@ export default function CampaignDetail() {
         {/* Today's Tasks */}
         {todaysTasks.length > 0 && (
           <div className="bg-card rounded-lg border border-border p-4">
-            <h3 className="font-semibold text-sm text-card-foreground mb-3">Today's Tasks in This Campaign</h3>
+            <h3 className="font-semibold text-sm text-card-foreground mb-3 flex items-center gap-2">
+              <Clock size={14} className="text-primary" /> Today's Tasks ({todaysTasks.length})
+            </h3>
             <div className="space-y-2">
               {todaysTasks.map(c => (
                 <div key={c.id} className="flex items-center justify-between p-2 rounded-md bg-background border border-border">
-                  <div>
-                    <span className="text-sm font-medium text-foreground">{c.first_name} {c.last_name}</span>
-                    <span className="text-xs text-muted-foreground ml-2">{c.account_name}</span>
+                  <div className="flex items-center gap-3">
+                    <Badge className={`text-[10px] ${PIPELINE_COLORS[c.pipeline_stage] || PIPELINE_COLORS[0]}`}>
+                      {PIPELINE_STAGES[c.pipeline_stage] || 'New'}
+                    </Badge>
+                    <div>
+                      <span className="text-sm font-medium text-foreground">{c.first_name} {c.last_name}</span>
+                      <span className="text-xs text-muted-foreground ml-2">{c.account_name}</span>
+                    </div>
                   </div>
                   <div className="flex gap-1">
                     {c.email && (
-                      <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-input bg-background hover:bg-accent text-foreground">
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleAction(c.id, 'email')}>
                         <Mail size={12} /> Email
-                      </a>
+                      </Button>
                     )}
                     {c.linkedin_url && (
-                      <a href={c.linkedin_url.startsWith('http') ? c.linkedin_url : `https://${c.linkedin_url}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-input bg-background hover:bg-accent text-foreground">
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleAction(c.id, 'linkedin')}>
                         <Linkedin size={12} /> LI
-                      </a>
+                      </Button>
                     )}
                     {c.phone && (
-                      <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-input bg-background hover:bg-accent text-foreground">
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleAction(c.id, 'call')}>
                         <Phone size={12} /> Call
-                      </a>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -189,23 +191,12 @@ export default function CampaignDetail() {
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 max-w-xs">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search contacts..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-9 h-8 text-xs"
-              />
+              <Input placeholder="Search contacts..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-8 text-xs" />
             </div>
             <div className="flex gap-1">
-              {['all', 0, 1, 2, 3, 4].map(s => (
-                <Button
-                  key={String(s)}
-                  size="sm"
-                  variant={stageFilter === s ? 'default' : 'outline'}
-                  className="h-7 text-xs"
-                  onClick={() => setStageFilter(s as any)}
-                >
-                  {s === 'all' ? 'All' : STAGE_LABELS[s as number]}
+              {(['all', 0, 1, 2, 3, 4] as const).map(s => (
+                <Button key={String(s)} size="sm" variant={stageFilter === s ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => setStageFilter(s as any)}>
+                  {s === 'all' ? 'All' : PIPELINE_STAGES[s as number]}
                 </Button>
               ))}
             </div>
@@ -219,27 +210,39 @@ export default function CampaignDetail() {
                   <TableHead>Company</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead className="w-24">Stage</TableHead>
+                  <TableHead className="w-28">Last Touch</TableHead>
+                  <TableHead className="w-28">Next Touch</TableHead>
                   <TableHead>Triggers</TableHead>
-                  <TableHead className="w-32">Actions</TableHead>
+                  <TableHead className="w-36">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading contacts...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading contacts...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No contacts match filters</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No contacts match filters</TableCell></TableRow>
                 ) : (
                   filtered.map(c => (
-                    <TableRow key={c.id} className="cursor-pointer hover:bg-accent/30" onClick={() => navigate(`/contacts/${c.id}`)}>
+                    <TableRow key={c.id} className="cursor-pointer hover:bg-accent/30">
                       <TableCell>
                         <span className="font-medium text-sm text-foreground">{c.first_name} {c.last_name}</span>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{c.account_name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{c.title || '—'}</TableCell>
                       <TableCell>
-                        <Badge className={`text-[10px] ${STAGE_COLORS[c.pipeline_stage] || STAGE_COLORS[0]}`}>
-                          {STAGE_LABELS[c.pipeline_stage] || 'New'}
+                        <Badge className={`text-[10px] ${PIPELINE_COLORS[c.pipeline_stage] || PIPELINE_COLORS[0]}`}>
+                          {PIPELINE_STAGES[c.pipeline_stage] || 'New'}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {c.last_touch ? new Date(c.last_touch).toLocaleDateString() : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {c.next_touch ? (
+                          <span className={`text-xs ${c.next_touch.split('T')[0] <= today ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                            {new Date(c.next_touch).toLocaleDateString()}
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1 max-w-[200px]">
@@ -254,19 +257,19 @@ export default function CampaignDetail() {
                       <TableCell onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1">
                           {c.email && (
-                            <a href={`mailto:${c.email}`} title="Email">
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Mail size={12} /></Button>
-                            </a>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Generate Email" onClick={() => handleAction(c.id, 'email')}>
+                              <Mail size={12} />
+                            </Button>
                           )}
                           {c.linkedin_url && (
-                            <a href={c.linkedin_url.startsWith('http') ? c.linkedin_url : `https://${c.linkedin_url}`} target="_blank" rel="noopener noreferrer" title="LinkedIn">
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Linkedin size={12} /></Button>
-                            </a>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Generate LinkedIn" onClick={() => handleAction(c.id, 'linkedin')}>
+                              <Linkedin size={12} />
+                            </Button>
                           )}
                           {c.phone && (
-                            <a href={`tel:${c.phone}`} title="Call">
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Phone size={12} /></Button>
-                            </a>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Generate Call" onClick={() => handleAction(c.id, 'call')}>
+                              <Phone size={12} />
+                            </Button>
                           )}
                         </div>
                       </TableCell>
