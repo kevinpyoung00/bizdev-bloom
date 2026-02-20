@@ -24,13 +24,16 @@ import SignalChips, { buildChipsFromTriggers, buildPillsFromLeadSignals } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import SuggestedPersonaBadge from '@/components/SuggestedPersonaBadge';
 import IndustryChip from '@/components/lead-engine/IndustryChip';
-import { exportD365AccountsCSV, ImportD365Results, ImportD365Success } from '@/components/lead-engine/D365ExportImport';
+import { exportD365AccountsCSV, ImportD365Results } from '@/components/lead-engine/D365ExportImport';
+import ImportD365SuccessBatch from '@/components/lead-engine/ImportD365SuccessBatch';
 import BulkCampaignModal from '@/components/lead-engine/BulkCampaignModal';
+import { useBatchSendToContacts, useBatchSendToCampaign } from '@/hooks/useBatchPush';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import MultiSourceImporter from '@/components/lead-engine/MultiSourceImporter';
 import NeedsReviewTab from '@/components/lead-engine/NeedsReviewTab';
 import ClaimedTab from '@/components/lead-engine/ClaimedTab';
 import BatchChip from '@/components/lead-engine/BatchChip';
+import BatchCampaignDialog from '@/components/lead-engine/BatchCampaignDialog';
 import { recommendPersona } from '@/lib/personaRecommend';
 import type { LeadWithAccount } from '@/hooks/useLeadEngine';
 import type { BatchMeta } from '@/lib/batchLabel';
@@ -191,6 +194,9 @@ export default function LeadQueue() {
   // Feature flags
   const d365ExportEnabled = useFeatureFlag('bizdev_d365_export');
   const campaignBulkEnabled = useFeatureFlag('bizdev_campaign_bulk');
+  const batchSendToContacts = useBatchSendToContacts();
+  const batchSendToCampaign = useBatchSendToCampaign();
+  const [sendToCampaignOpen, setSendToCampaignOpen] = useState(false);
 
   // Batch filter
   const [batchFilter, setBatchFilter] = useState<string>('all');
@@ -479,6 +485,32 @@ export default function LeadQueue() {
             <Button variant="outline" size="sm" onClick={handleMarkUploaded} disabled={markUploaded.isPending || selectedIds.size === 0}>
               {markUploaded.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <CheckCircle2 size={16} className="mr-1" />}
               Mark Uploaded
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={batchSendToContacts.isPending || batchFilter === 'all'}
+              title={batchFilter === 'all' ? 'Select a single Batch to push' : 'Push claimed contacts from this batch'}
+              onClick={() => {
+                if (batchFilter === 'all') { toast.error('Select a single Batch to push.'); return; }
+                batchSendToContacts.execute(batchFilter);
+              }}
+            >
+              {batchSendToContacts.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Users size={16} className="mr-1" />}
+              Send to Contacts
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={batchSendToCampaign.isPending || batchFilter === 'all'}
+              title={batchFilter === 'all' ? 'Select a single Batch to push' : 'Push claimed contacts to campaign'}
+              onClick={() => {
+                if (batchFilter === 'all') { toast.error('Select a single Batch to push.'); return; }
+                setSendToCampaignOpen(true);
+              }}
+            >
+              {batchSendToCampaign.isPending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Mail size={16} className="mr-1" />}
+              Send to Campaign
             </Button>
           </div>
         </div>
@@ -823,7 +855,7 @@ export default function LeadQueue() {
 
       <AccountDrawer lead={selectedLead} open={drawerOpen} onOpenChange={setDrawerOpen} />
       <ImportD365Results open={importD365Open} onOpenChange={setImportD365Open} />
-      <ImportD365Success open={d365SuccessOpen} onOpenChange={setD365SuccessOpen} />
+      <ImportD365SuccessBatch open={d365SuccessOpen} onOpenChange={setD365SuccessOpen} selectedBatchId={batchFilter} />
       <MultiSourceImporter open={multiImportOpen} onOpenChange={setMultiImportOpen} />
       <BulkCampaignModal
         open={bulkCampaignOpen}
@@ -831,6 +863,7 @@ export default function LeadQueue() {
         selectedLeadIds={Array.from(selectedIds)}
         onComplete={() => setSelectedIds(new Set())}
       />
+      <BatchCampaignDialog open={sendToCampaignOpen} onOpenChange={setSendToCampaignOpen} batchId={batchFilter} />
       <DiscoveryControlPanel
         open={discoveryPanelOpen}
         onOpenChange={setDiscoveryPanelOpen}
