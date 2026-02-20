@@ -25,18 +25,38 @@ export function useBatchSendToContacts() {
     const result: BatchPushResult = { created: 0, updated: 0, skipped: 0, warnings: [] };
 
     try {
+      // Find contacts in this batch
       const { data: contacts } = await supabase
         .from('contacts_le')
         .select('id, email, first_name, last_name, match_key, crm_status, account_id, batch_id')
-        .eq('batch_id', batchId)
-        .eq('crm_status', 'claimed');
+        .eq('batch_id', batchId);
 
       if (!contacts || contacts.length === 0) {
-        toast.info('No claimed contacts in this batch to push.');
+        toast.info('No contacts found in this batch.');
         return result;
       }
 
-      for (const contact of contacts) {
+      // Find which accounts have claimed leads
+      const accountIds = [...new Set(contacts.map(c => c.account_id).filter(Boolean))] as string[];
+      const { data: claimedLeads } = await supabase.from('lead_queue')
+        .select('id, account_id')
+        .in('account_id', accountIds)
+        .eq('claim_status', 'claimed');
+
+      if (!claimedLeads || claimedLeads.length === 0) {
+        toast.info('No claimed leads in this batch to push.');
+        return result;
+      }
+
+      const claimedAccountIds = new Set(claimedLeads.map(l => l.account_id).filter(Boolean));
+      const eligibleContacts = contacts.filter(c => c.account_id && claimedAccountIds.has(c.account_id));
+
+      if (eligibleContacts.length === 0) {
+        toast.info('No contacts with claimed leads in this batch.');
+        return result;
+      }
+
+      for (const contact of eligibleContacts) {
         let mk = (contact as any).match_key;
         if (!mk) {
           let domain = '';
@@ -61,16 +81,13 @@ export function useBatchSendToContacts() {
         result.updated++;
       }
 
-      // Update lead_queue for these accounts
-      const accountIds = [...new Set(contacts.map(c => c.account_id).filter(Boolean))];
-      if (accountIds.length > 0) {
+      // Update lead_queue for claimed leads in these accounts
+      for (const lead of claimedLeads) {
         await supabase.from('lead_queue')
           .update({
-            claim_status: 'claimed',
             pushed_to_crm_at: new Date().toISOString(),
           } as any)
-          .in('account_id', accountIds)
-          .eq('claim_status', 'new');
+          .eq('id', lead.id);
       }
 
       await supabase.from('audit_log').insert({
@@ -108,18 +125,38 @@ export function useBatchSendToCampaign() {
     const result: BatchPushResult = { created: 0, updated: 0, skipped: 0, warnings: [] };
 
     try {
+      // Find contacts in this batch
       const { data: contacts } = await supabase
         .from('contacts_le')
         .select('id, email, first_name, last_name, match_key, crm_status, account_id, campaign_tags')
-        .eq('batch_id', batchId)
-        .eq('crm_status', 'claimed');
+        .eq('batch_id', batchId);
 
       if (!contacts || contacts.length === 0) {
-        toast.info('No claimed contacts in this batch to push to campaign.');
+        toast.info('No contacts found in this batch.');
         return result;
       }
 
-      for (const contact of contacts) {
+      // Find which accounts have claimed leads
+      const accountIds = [...new Set(contacts.map(c => c.account_id).filter(Boolean))] as string[];
+      const { data: claimedLeads } = await supabase.from('lead_queue')
+        .select('id, account_id, campaign_tags')
+        .in('account_id', accountIds)
+        .eq('claim_status', 'claimed');
+
+      if (!claimedLeads || claimedLeads.length === 0) {
+        toast.info('No claimed leads in this batch to push to campaign.');
+        return result;
+      }
+
+      const claimedAccountIds = new Set(claimedLeads.map(l => l.account_id).filter(Boolean));
+      const eligibleContacts = contacts.filter(c => c.account_id && claimedAccountIds.has(c.account_id));
+
+      if (eligibleContacts.length === 0) {
+        toast.info('No contacts with claimed leads in this batch.');
+        return result;
+      }
+
+      for (const contact of eligibleContacts) {
         let mk = (contact as any).match_key;
         if (!mk) {
           let domain = '';
@@ -148,23 +185,15 @@ export function useBatchSendToCampaign() {
         result.updated++;
       }
 
-      // Update lead_queue campaign_tags and status
-      const accountIds = [...new Set(contacts.map(c => c.account_id).filter(Boolean))];
-      if (accountIds.length > 0) {
-        // Get existing lead_queue rows to merge tags
-        const { data: leadRows } = await supabase.from('lead_queue')
-          .select('id, campaign_tags')
-          .in('account_id', accountIds);
-        
-        for (const row of leadRows || []) {
-          const existing = ((row as any).campaign_tags || []) as string[];
-          const merged = mergeTags(existing, [campaignName]);
-          await supabase.from('lead_queue').update({
-            claim_status: 'in_campaign',
-            campaign_tags: merged as any,
-            pushed_to_crm_at: new Date().toISOString(),
-          } as any).eq('id', row.id);
-        }
+      // Update lead_queue campaign_tags and status for claimed leads
+      for (const row of claimedLeads) {
+        const existing = ((row as any).campaign_tags || []) as string[];
+        const merged = mergeTags(existing, [campaignName]);
+        await supabase.from('lead_queue').update({
+          claim_status: 'in_campaign',
+          campaign_tags: merged as any,
+          pushed_to_crm_at: new Date().toISOString(),
+        } as any).eq('id', row.id);
       }
 
       await supabase.from('audit_log').insert({
