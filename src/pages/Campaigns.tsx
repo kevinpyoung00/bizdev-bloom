@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCrm } from '@/store/CrmContext';
 import Layout from '@/components/crm/Layout';
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, Edit2, Trash2, Users, Megaphone } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, Megaphone, Database } from 'lucide-react';
 import { Campaign, CampaignType, WeekPreset } from '@/types/crm';
 import { useCampaignCounts } from '@/hooks/useCampaignCounts';
 
@@ -18,7 +18,7 @@ const emptyPresets = (): WeekPreset[] => Array.from({ length: 12 }, (_, i) => ({
 
 export default function Campaigns() {
   const { campaigns, contacts, addCampaign, updateCampaign, deleteCampaign } = useCrm();
-  const { getCountFor } = useCampaignCounts();
+  const { counts, getCountFor } = useCampaignCounts();
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -116,8 +116,31 @@ export default function Campaigns() {
               </div>
             );
           })}
+          {/* DB-only campaigns (enrolled via Lead Queue but not in CrmContext) */}
+          {(() => {
+            const crmNames = new Set(campaigns.map(c => c.name));
+            const dbOnly = [...counts.keys()].filter(name => !crmNames.has(name) && counts.get(name)! > 0);
+            return dbOnly.map(tagName => (
+              <div key={tagName} className="bg-card rounded-lg border border-border p-5 hover:shadow-sm transition-all cursor-pointer border-dashed" onClick={() => navigate(`/campaigns/${encodeURIComponent(tagName)}`)}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-accent">
+                      <Database size={16} className="text-accent-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm text-card-foreground">{tagName}</h3>
+                      <span className="text-xs text-muted-foreground">Enrolled via Lead Queue</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><Users size={12} /> {counts.get(tagName)} contacts</span>
+                  <span>🟢 Active</span>
+                </div>
+              </div>
+            ));
+          })()}
         </div>
-
         <Dialog open={showForm} onOpenChange={(open) => { setShowForm(open); if (!open) resetForm(); }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
