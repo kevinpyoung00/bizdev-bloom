@@ -10,7 +10,7 @@ import ContactDetail from "./pages/ContactDetail";
 import Today from "./pages/Today";
 import Pipeline from "./pages/Pipeline";
 import Campaigns from "./pages/Campaigns";
-import CampaignDetail from "./pages/CampaignDetail";
+// CampaignDetail removed — campaigns now expand inline
 // Templates removed — drip generation is now inline in Account Drawer
 import LeadDashboard from "./pages/LeadDashboard";
 import LeadQueue from "./pages/LeadQueue";
@@ -36,7 +36,7 @@ const App = () => (
             <Route path="/contacts/:id" element={<ContactDetail />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/campaigns" element={<Campaigns />} />
-            <Route path="/campaigns/:name" element={<CampaignDetail />} />
+            {/* campaigns/:name removed — inline expansion */}
             {/* Templates route removed — drip inline */}
             <Route path="/leads" element={<LeadDashboard />} />
             <Route path="/lead-queue" element={<LeadQueue />} />
