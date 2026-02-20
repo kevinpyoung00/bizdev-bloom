@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { useCompanyEnrich } from '@/hooks/useCompanyEnrich';
 import QuickAnalyze from '@/components/QuickAnalyze';
+import { normalizeUrl } from '@/lib/normalizeUrl';
 
 function getEmployeeTier(count: string): string {
   const n = parseInt(count, 10);
@@ -420,7 +421,7 @@ export default function ContactDetail() {
               )}
             </div>
             {contact.linkedInUrl && (
-              <a href={contact.linkedInUrl?.startsWith('http') ? contact.linkedInUrl : `https://${contact.linkedInUrl}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 text-xs flex items-center gap-1">
+              <a href={normalizeUrl(contact.linkedInUrl)} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 text-xs flex items-center gap-1" onClick={e => e.stopPropagation()}>
                 <Linkedin size={12} /> LinkedIn Profile <ExternalLink size={10} />
               </a>
             )}
