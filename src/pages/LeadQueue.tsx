@@ -459,7 +459,7 @@ export default function LeadQueue() {
             </Button>
             {d365ExportEnabled && (
               <Button variant="outline" size="sm" title="Export unique companies in the exact CSV format accepted by D365 Accounts import." onClick={() => exportD365AccountsCSV(leads)}>
-                <Download size={16} className="mr-1" /> D365 (Accounts CSV)
+                <Download size={16} className="mr-1" /> Export D365 Check
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setImportD365Open(true)}>
