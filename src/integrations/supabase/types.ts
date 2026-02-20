@@ -330,6 +330,7 @@ export type Database = {
           badges: Json
           batch_id: string | null
           campaign_batch_id: string | null
+          campaign_tags: Json
           created_at: string
           crm_guid: string | null
           crm_record_url: string | null
@@ -347,6 +348,7 @@ export type Database = {
           manual_triggers: Json
           match_key: string | null
           phone: string | null
+          pushed_to_crm_at: string | null
           role_start_date: string | null
           seniority: string | null
           source_batch_id: string | null
@@ -360,6 +362,7 @@ export type Database = {
           badges?: Json
           batch_id?: string | null
           campaign_batch_id?: string | null
+          campaign_tags?: Json
           created_at?: string
           crm_guid?: string | null
           crm_record_url?: string | null
@@ -377,6 +380,7 @@ export type Database = {
           manual_triggers?: Json
           match_key?: string | null
           phone?: string | null
+          pushed_to_crm_at?: string | null
           role_start_date?: string | null
           seniority?: string | null
           source_batch_id?: string | null
@@ -390,6 +394,7 @@ export type Database = {
           badges?: Json
           batch_id?: string | null
           campaign_batch_id?: string | null
+          campaign_tags?: Json
           created_at?: string
           crm_guid?: string | null
           crm_record_url?: string | null
@@ -407,6 +412,7 @@ export type Database = {
           manual_triggers?: Json
           match_key?: string | null
           phone?: string | null
+          pushed_to_crm_at?: string | null
           role_start_date?: string | null
           seniority?: string | null
           source_batch_id?: string | null
@@ -692,6 +698,8 @@ export type Database = {
       lead_queue: {
         Row: {
           account_id: string | null
+          bizdev_crm_id: string | null
+          campaign_tags: Json
           claim_status: string
           claimed_at: string | null
           created_at: string
@@ -699,6 +707,7 @@ export type Database = {
           industry_key: string | null
           persona: string | null
           priority_rank: number
+          pushed_to_crm_at: string | null
           reason: Json | null
           rejected_at: string | null
           rejected_reason: string | null
@@ -709,6 +718,8 @@ export type Database = {
         }
         Insert: {
           account_id?: string | null
+          bizdev_crm_id?: string | null
+          campaign_tags?: Json
           claim_status?: string
           claimed_at?: string | null
           created_at?: string
@@ -716,6 +727,7 @@ export type Database = {
           industry_key?: string | null
           persona?: string | null
           priority_rank: number
+          pushed_to_crm_at?: string | null
           reason?: Json | null
           rejected_at?: string | null
           rejected_reason?: string | null
@@ -726,6 +738,8 @@ export type Database = {
         }
         Update: {
           account_id?: string | null
+          bizdev_crm_id?: string | null
+          campaign_tags?: Json
           claim_status?: string
           claimed_at?: string | null
           created_at?: string
@@ -733,6 +747,7 @@ export type Database = {
           industry_key?: string | null
           persona?: string | null
           priority_rank?: number
+          pushed_to_crm_at?: string | null
           reason?: Json | null
           rejected_at?: string | null
           rejected_reason?: string | null

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { normalizeMatchKey } from '@/lib/matchKey';
+import { mergeTags } from '@/lib/upsertContact';
 
 interface BatchPushResult {
   created: number;
@@ -13,7 +14,7 @@ interface BatchPushResult {
 
 /**
  * Push claimed contacts from a batch into "ready" state.
- * Ensures match_key is populated, crm_status = 'claimed'.
+ * Ensures match_key is populated, updates pushed_to_crm_at.
  */
 export function useBatchSendToContacts() {
   const queryClient = useQueryClient();
@@ -24,7 +25,6 @@ export function useBatchSendToContacts() {
     const result: BatchPushResult = { created: 0, updated: 0, skipped: 0, warnings: [] };
 
     try {
-      // Get claimed contacts in this batch
       const { data: contacts } = await supabase
         .from('contacts_le')
         .select('id, email, first_name, last_name, match_key, crm_status, account_id, batch_id')
@@ -37,7 +37,6 @@ export function useBatchSendToContacts() {
       }
 
       for (const contact of contacts) {
-        // Ensure match_key is populated
         let mk = (contact as any).match_key;
         if (!mk) {
           let domain = '';
@@ -54,7 +53,11 @@ export function useBatchSendToContacts() {
           await supabase.from('contacts_le').update({ match_key: mk } as any).eq('id', contact.id);
         }
 
-        // Mark as ready for CRM (keep crm_status = 'claimed', just ensure data is clean)
+        // Mark as pushed to CRM
+        await supabase.from('contacts_le').update({
+          pushed_to_crm_at: new Date().toISOString(),
+        } as any).eq('id', contact.id);
+
         result.updated++;
       }
 
@@ -62,7 +65,10 @@ export function useBatchSendToContacts() {
       const accountIds = [...new Set(contacts.map(c => c.account_id).filter(Boolean))];
       if (accountIds.length > 0) {
         await supabase.from('lead_queue')
-          .update({ claim_status: 'claimed' } as any)
+          .update({
+            claim_status: 'claimed',
+            pushed_to_crm_at: new Date().toISOString(),
+          } as any)
           .in('account_id', accountIds)
           .eq('claim_status', 'new');
       }
@@ -89,22 +95,22 @@ export function useBatchSendToContacts() {
 }
 
 /**
- * Push claimed contacts from a batch directly to a campaign.
- * Creates/verifies contacts first, then assigns campaign_batch_id.
+ * Push claimed contacts from a batch to a campaign.
+ * Updates campaign_tags on both contacts_le and lead_queue.
+ * Does NOT write to message_snapshots.
  */
 export function useBatchSendToCampaign() {
   const queryClient = useQueryClient();
   const [isPending, setIsPending] = useState(false);
 
-  const execute = useCallback(async (batchId: string, campaignBatchId: string): Promise<BatchPushResult> => {
+  const execute = useCallback(async (batchId: string, campaignName: string): Promise<BatchPushResult> => {
     setIsPending(true);
     const result: BatchPushResult = { created: 0, updated: 0, skipped: 0, warnings: [] };
 
     try {
-      // Get claimed contacts in this batch
       const { data: contacts } = await supabase
         .from('contacts_le')
-        .select('id, email, first_name, last_name, match_key, crm_status, account_id')
+        .select('id, email, first_name, last_name, match_key, crm_status, account_id, campaign_tags')
         .eq('batch_id', batchId)
         .eq('crm_status', 'claimed');
 
@@ -114,7 +120,6 @@ export function useBatchSendToCampaign() {
       }
 
       for (const contact of contacts) {
-        // Ensure match_key
         let mk = (contact as any).match_key;
         if (!mk) {
           let domain = '';
@@ -130,32 +135,47 @@ export function useBatchSendToCampaign() {
           }
         }
 
-        // Update campaign_batch_id
+        const existingTags = ((contact as any).campaign_tags || []) as string[];
+        const mergedTags = mergeTags(existingTags, [campaignName]);
+
         await supabase.from('contacts_le').update({
-          campaign_batch_id: campaignBatchId,
+          campaign_batch_id: campaignName,
+          campaign_tags: mergedTags as any,
           match_key: mk,
+          pushed_to_crm_at: new Date().toISOString(),
         } as any).eq('id', contact.id);
 
         result.updated++;
       }
 
-      // Update lead_queue status
+      // Update lead_queue campaign_tags and status
       const accountIds = [...new Set(contacts.map(c => c.account_id).filter(Boolean))];
       if (accountIds.length > 0) {
-        await supabase.from('lead_queue')
-          .update({ claim_status: 'in_campaign' } as any)
+        // Get existing lead_queue rows to merge tags
+        const { data: leadRows } = await supabase.from('lead_queue')
+          .select('id, campaign_tags')
           .in('account_id', accountIds);
+        
+        for (const row of leadRows || []) {
+          const existing = ((row as any).campaign_tags || []) as string[];
+          const merged = mergeTags(existing, [campaignName]);
+          await supabase.from('lead_queue').update({
+            claim_status: 'in_campaign',
+            campaign_tags: merged as any,
+            pushed_to_crm_at: new Date().toISOString(),
+          } as any).eq('id', row.id);
+        }
       }
 
       await supabase.from('audit_log').insert({
         actor: 'user', action: 'batch_send_to_campaign',
         entity_type: 'contacts_le',
-        details: { batch_id: batchId, campaign_batch_id: campaignBatchId, updated: result.updated, skipped: result.skipped },
+        details: { batch_id: batchId, campaign_name: campaignName, updated: result.updated, skipped: result.skipped },
       });
 
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['claimed-leads'] });
-      toast.success(`${result.updated} contacts assigned to campaign`);
+      toast.success(`${result.updated} contacts enrolled in "${campaignName}"`);
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`);
     } finally {
