@@ -355,7 +355,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                             </div>
 
                             {/* ── Action Bar ── */}
-                            <ActionBar contact={contact} onOpenDraft={openDraftModal} currentWeek={currentWeek} />
+                            <ActionBar contact={contact} />
 
                             {/* 12-Week Drip Workflow */}
                             <div>
@@ -538,11 +538,10 @@ export default function CampaignContactsTable({ campaignName }: Props) {
 }
 
 /* ── Action Bar sub-component ── */
-function ActionBar({ contact, onOpenDraft, currentWeek }: { contact: any; onOpenDraft: (contact: any, week: number, channel: 'email' | 'linkedin' | 'phone') => void; currentWeek: number }) {
+function ActionBar({ contact }: { contact: any }) {
   return (
     <div className="bg-card rounded-lg border border-border p-3">
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Deep-link actions */}
         {contact.linkedin_url && (
           <a
             href={normalizeUrl(contact.linkedin_url)}
@@ -566,25 +565,14 @@ function ActionBar({ contact, onOpenDraft, currentWeek }: { contact: any; onOpen
         {contact.phone && (
           <a
             href={formatTelHref(contact.phone)}
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
             <Phone size={13} /> Call
           </a>
         )}
-
-        <span className="border-l border-border h-5 mx-1" />
-
-        {/* Generate actions for current week */}
-        <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={e => { e.stopPropagation(); onOpenDraft(contact, currentWeek, 'linkedin'); }}>
-          <Linkedin size={12} /> Gen LinkedIn
-        </Button>
-        <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={e => { e.stopPropagation(); onOpenDraft(contact, currentWeek, 'email'); }}>
-          <Mail size={12} /> Gen Email
-        </Button>
-        <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={e => { e.stopPropagation(); onOpenDraft(contact, currentWeek, 'phone'); }}>
-          <Phone size={12} /> Gen Phone
-        </Button>
       </div>
     </div>
   );
@@ -594,6 +582,10 @@ function ActionBar({ contact, onOpenDraft, currentWeek }: { contact: any; onOpen
 function CompanyOverviewSection({ contact, onGenerateBrief, isGeneratingBrief }: { contact: any; onGenerateBrief: () => void; isGeneratingBrief: boolean }) {
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [showFullBrief, setShowFullBrief] = useState(false);
+
+  const hasEmail = !!contact.email;
+  const hasPhone = !!contact.phone;
+  const hasLinkedIn = !!contact.linkedin_url;
 
   return (
     <Collapsible open={overviewOpen} onOpenChange={setOverviewOpen}>
@@ -612,15 +604,19 @@ function CompanyOverviewSection({ contact, onGenerateBrief, isGeneratingBrief }:
           <ChevronDown size={14} className={`text-muted-foreground transition-transform ${overviewOpen ? 'rotate-180' : ''}`} />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="px-4 pb-4 space-y-3">
-            {/* AI Brief */}
+          <div className="px-4 pb-4 space-y-4">
+            {/* AI Brief / Analysis */}
             {contact.brief_markdown ? (
               <div>
-                <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles size={12} className="text-primary" />
+                  <h5 className="text-xs font-semibold text-foreground">Generated Analysis</h5>
+                </div>
+                <div className="bg-secondary/50 rounded-lg p-3 text-sm text-foreground prose prose-sm max-w-none whitespace-pre-wrap">
                   {showFullBrief || contact.brief_markdown.length <= 600
                     ? contact.brief_markdown
                     : contact.brief_markdown.slice(0, 600) + '…'}
-                </p>
+                </div>
                 {contact.brief_markdown.length > 600 && (
                   <button
                     className="text-xs text-primary hover:underline mt-1"
@@ -646,23 +642,32 @@ function CompanyOverviewSection({ contact, onGenerateBrief, isGeneratingBrief }:
               </div>
             )}
 
-            {/* Firmographics grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Industry</p>
-                <p className="text-foreground font-medium">{contact.industry || '—'}</p>
+            {/* Reachability */}
+            <div>
+              <h5 className="text-xs font-semibold text-foreground mb-2">Reachability</h5>
+              <div className="flex flex-wrap gap-4">
+                {[
+                  { icon: Mail, label: 'Email', has: hasEmail },
+                  { icon: Phone, label: 'Phone', has: hasPhone },
+                  { icon: Linkedin, label: 'LinkedIn', has: hasLinkedIn },
+                ].map(({ icon: Icon, label, has }) => (
+                  <div key={label} className={`flex items-center gap-1.5 text-xs ${has ? 'font-medium text-primary' : 'text-muted-foreground opacity-50'}`}>
+                    <Icon size={12} /> {label} {has ? '✓' : '✗'}
+                  </div>
+                ))}
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Employees</p>
-                <p className="text-foreground font-medium">{contact.employee_count || '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Source</p>
-                <p className="text-foreground font-medium">{contact.source || '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">ICP Class</p>
-                <p className="text-foreground font-medium">{contact.icp_class || '—'}</p>
+            </div>
+
+            {/* Firmographics */}
+            <div>
+              <h5 className="text-xs font-semibold text-foreground mb-2">Firmographics</h5>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-muted-foreground text-xs">Domain:</span> <span className="text-foreground text-xs font-medium">{contact.domain || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs">Industry:</span> <span className="text-foreground text-xs font-medium">{contact.industry || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs">Employees:</span> <span className="text-foreground text-xs font-medium">{contact.employee_count || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs">Location:</span> <span className="text-foreground text-xs font-medium">{contact.hq_city ? `${contact.hq_city}, ${contact.hq_state}` : contact.hq_state || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs">ICP Class:</span> <span className="text-foreground text-xs font-medium">{contact.icp_class || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs">Revenue:</span> <span className="text-foreground text-xs font-medium">{contact.revenue_range || '—'}</span></div>
               </div>
             </div>
 
