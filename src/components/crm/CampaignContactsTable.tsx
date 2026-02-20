@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Search, Mail, Linkedin, Phone, ArrowUpDown, Loader2, ExternalLink, ChevronDown, ChevronRight, Check, Copy, Calendar, Building2, Sparkles, Target, Zap, Globe } from 'lucide-react';
+import { Search, Mail, Linkedin, Phone, ArrowUpDown, Loader2, ExternalLink, ChevronDown, ChevronRight, Check, Copy, Calendar, Building2, Sparkles, Zap, Globe } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { usePipelineUpdate, PIPELINE_STAGES, PIPELINE_COLORS, getCurrentWeekFromProgress, getCompletedWeeks, type DripWeekProgress } from '@/hooks/usePipelineUpdate';
 import { inferBaselineTriggers } from '@/lib/triggers';
@@ -14,6 +14,8 @@ import { WEEK_THEMES, getWeekTheme } from '@/lib/weekThemes';
 import { isCallWeek } from '@/types/crm';
 import { toast } from 'sonner';
 import SignalChips, { buildChipsFromTriggers } from '@/components/crm/SignalChips';
+import { normalizeUrl, formatTelHref, renderReason } from '@/lib/normalizeUrl';
+import { useGenerateBrief } from '@/hooks/useAIGeneration';
 
 interface Props {
   campaignName: string;
@@ -39,7 +41,8 @@ function generateDraft(week: number, channel: 'email' | 'linkedin' | 'phone', co
 
 export default function CampaignContactsTable({ campaignName }: Props) {
   const queryClient = useQueryClient();
-  const { advancePipeline, markChannelDone } = usePipelineUpdate();
+  const { markChannelDone } = usePipelineUpdate();
+  const generateBrief = useGenerateBrief();
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'name' | 'company' | 'stage' | 'nextTouch'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -53,6 +56,9 @@ export default function CampaignContactsTable({ campaignName }: Props) {
   const [modalWeek, setModalWeek] = useState(1);
   const [modalContactId, setModalContactId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Brief generation state per account
+  const [generatingBriefFor, setGeneratingBriefFor] = useState<string | null>(null);
 
   const { data: contacts = [], isLoading } = useQuery({
     queryKey: ['campaign-contacts', campaignName],
@@ -75,10 +81,8 @@ export default function CampaignContactsTable({ campaignName }: Props) {
         for (const a of accounts || []) accountMap.set(a.id, a);
       }
 
-      // Fetch company_scrape from accounts if available
       let scrapeMap = new Map<string, any>();
       if (accountIds.length > 0) {
-        // company_scrape might be stored on accounts or via account_briefs
         const { data: briefs } = await supabase.from('account_briefs').select('account_id, brief_markdown').in('account_id', accountIds).order('generated_at', { ascending: false });
         for (const b of briefs || []) {
           if (!scrapeMap.has(b.account_id!)) scrapeMap.set(b.account_id!, b.brief_markdown);
@@ -185,6 +189,19 @@ export default function CampaignContactsTable({ campaignName }: Props) {
     toast.success(`Week ${week} ${channel} marked done`);
   };
 
+  const handleGenerateBrief = async (accountId: string) => {
+    setGeneratingBriefFor(accountId);
+    try {
+      await generateBrief.mutateAsync(accountId);
+      queryClient.invalidateQueries({ queryKey: ['campaign-contacts', campaignName] });
+      toast.success('Analysis generated!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate analysis');
+    } finally {
+      setGeneratingBriefFor(null);
+    }
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -259,8 +276,6 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                 const currentWeek = getCurrentWeekFromProgress(contact.dripProgress);
                 const completedWeeks = getCompletedWeeks(contact.dripProgress);
                 const progressPct = Math.round((completedWeeks / 12) * 100);
-
-                // Per-channel status for current week (for collapsed row indicators)
                 const currentWP = contact.dripProgress.find((p: DripWeekProgress) => p.week === currentWeek);
 
                 return (
@@ -280,7 +295,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                         <div className="flex items-center gap-2">
                           <span>{contact.first_name} {contact.last_name}</span>
                           {contact.linkedin_url && (
-                            <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-muted-foreground hover:text-primary transition-colors">
+                            <a href={normalizeUrl(contact.linkedin_url)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-muted-foreground hover:text-primary transition-colors">
                               <ExternalLink size={12} />
                             </a>
                           )}
@@ -296,15 +311,15 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                       {/* Channel status indicators on collapsed row */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5" title="LinkedIn">
                             <Linkedin size={12} className={currentWP?.liDone ? 'text-success' : 'text-muted-foreground/40'} />
                             {currentWP?.liDone && <Check size={8} className="text-success -ml-1" />}
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5" title="Email">
                             <Mail size={12} className={currentWP?.emailDone ? 'text-success' : 'text-muted-foreground/40'} />
                             {currentWP?.emailDone && <Check size={8} className="text-success -ml-1" />}
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5" title="Phone">
                             <Phone size={12} className={currentWP?.phoneDone ? 'text-success' : 'text-muted-foreground/40'} />
                             {currentWP?.phoneDone && <Check size={8} className="text-success -ml-1" />}
                           </div>
@@ -322,9 +337,13 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                       <tr key={`${contact.id}-expanded`}>
                         <td colSpan={8} className="p-0">
                           <div className="bg-muted/20 border-t border-border px-6 py-5 space-y-5">
-                            
-                            {/* Company Overview */}
-                            <CompanyOverviewSection contact={contact} />
+
+                            {/* Company Overview (AI Enriched) */}
+                            <CompanyOverviewSection
+                              contact={contact}
+                              onGenerateBrief={() => handleGenerateBrief(contact.account_id || '')}
+                              isGeneratingBrief={generatingBriefFor === (contact.account_id || '')}
+                            />
 
                             {/* Trigger / Signal Chips */}
                             <div className="bg-card rounded-lg border border-border p-4">
@@ -335,6 +354,9 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                               <SignalChips chips={buildChipsFromTriggers(contact.triggers)} />
                             </div>
 
+                            {/* ── Action Bar ── */}
+                            <ActionBar contact={contact} onOpenDraft={openDraftModal} currentWeek={currentWeek} />
+
                             {/* 12-Week Drip Workflow */}
                             <div>
                               <div className="flex items-center gap-2 mb-1">
@@ -343,7 +365,8 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                                 <Badge variant="secondary" className="text-[10px]">Week {currentWeek} of 12</Badge>
                               </div>
                               <p className="text-xs text-muted-foreground mb-3">
-                                <span className="font-medium">Reason selected:</span> {contact.triggers.slice(0, 3).join(', ') || 'ICP fit'}
+                                <span className="font-medium">Reason selected:</span>{' '}
+                                {renderReason(contact.triggers?.length > 0 ? contact.triggers.slice(0, 3) : contact.account_triggers)}
                               </p>
 
                               {/* Progress bar */}
@@ -354,7 +377,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                                 <span className="text-xs text-muted-foreground font-medium">{completedWeeks}/12 weeks</span>
                               </div>
 
-                              {/* Week cards — matching ContactDetail layout */}
+                              {/* Week cards */}
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                 {WEEK_THEMES.map(wt => {
                                   const weekProgress = contact.dripProgress.find((p: DripWeekProgress) => p.week === wt.week);
@@ -412,7 +435,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                                             onClick={(e) => { e.stopPropagation(); openDraftModal(contact, wt.week, 'linkedin'); }}
                                           >
                                             <Linkedin size={14} />
-                                            {wt.week === 1 ? 'Connect / Generate LinkedIn Message' : 'Generate LinkedIn Message'}
+                                            {wt.week === 1 ? 'Connect / Generate LinkedIn' : 'Generate LinkedIn'}
                                           </Button>
                                         </div>
 
@@ -440,7 +463,7 @@ export default function CampaignContactsTable({ campaignName }: Props) {
                                           </Button>
                                         </div>
 
-                                        {/* Phone (call weeks or always show) */}
+                                        {/* Phone */}
                                         <div className="flex items-center gap-2">
                                           <button
                                             className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -514,11 +537,63 @@ export default function CampaignContactsTable({ campaignName }: Props) {
   );
 }
 
-/* ── Company Overview sub-component ── */
-function CompanyOverviewSection({ contact }: { contact: any }) {
-  const [overviewOpen, setOverviewOpen] = useState(false);
+/* ── Action Bar sub-component ── */
+function ActionBar({ contact, onOpenDraft, currentWeek }: { contact: any; onOpenDraft: (contact: any, week: number, channel: 'email' | 'linkedin' | 'phone') => void; currentWeek: number }) {
+  return (
+    <div className="bg-card rounded-lg border border-border p-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Deep-link actions */}
+        {contact.linkedin_url && (
+          <a
+            href={normalizeUrl(contact.linkedin_url)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            <Linkedin size={13} /> Open LinkedIn
+          </a>
+        )}
+        {contact.email && (
+          <a
+            href={`mailto:${contact.email}`}
+            onClick={e => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            <Mail size={13} /> Email
+          </a>
+        )}
+        {contact.phone && (
+          <a
+            href={formatTelHref(contact.phone)}
+            onClick={e => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            <Phone size={13} /> Call
+          </a>
+        )}
 
-  const hasIntel = contact.brief_markdown || contact.account_triggers;
+        <span className="border-l border-border h-5 mx-1" />
+
+        {/* Generate actions for current week */}
+        <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={e => { e.stopPropagation(); onOpenDraft(contact, currentWeek, 'linkedin'); }}>
+          <Linkedin size={12} /> Gen LinkedIn
+        </Button>
+        <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={e => { e.stopPropagation(); onOpenDraft(contact, currentWeek, 'email'); }}>
+          <Mail size={12} /> Gen Email
+        </Button>
+        <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={e => { e.stopPropagation(); onOpenDraft(contact, currentWeek, 'phone'); }}>
+          <Phone size={12} /> Gen Phone
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Company Overview sub-component ── */
+function CompanyOverviewSection({ contact, onGenerateBrief, isGeneratingBrief }: { contact: any; onGenerateBrief: () => void; isGeneratingBrief: boolean }) {
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [showFullBrief, setShowFullBrief] = useState(false);
 
   return (
     <Collapsible open={overviewOpen} onOpenChange={setOverviewOpen}>
@@ -539,11 +614,35 @@ function CompanyOverviewSection({ contact }: { contact: any }) {
         <CollapsibleContent>
           <div className="px-4 pb-4 space-y-3">
             {/* AI Brief */}
-            {contact.brief_markdown && (
+            {contact.brief_markdown ? (
               <div>
                 <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
-                  {contact.brief_markdown.length > 600 ? contact.brief_markdown.slice(0, 600) + '…' : contact.brief_markdown}
+                  {showFullBrief || contact.brief_markdown.length <= 600
+                    ? contact.brief_markdown
+                    : contact.brief_markdown.slice(0, 600) + '…'}
                 </p>
+                {contact.brief_markdown.length > 600 && (
+                  <button
+                    className="text-xs text-primary hover:underline mt-1"
+                    onClick={e => { e.stopPropagation(); setShowFullBrief(v => !v); }}
+                  >
+                    {showFullBrief ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground">No AI analysis yet.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[11px] gap-1"
+                  onClick={e => { e.stopPropagation(); onGenerateBrief(); }}
+                  disabled={isGeneratingBrief}
+                >
+                  {isGeneratingBrief ? <Loader2 size={12} className="animate-spin mr-1" /> : <Sparkles size={12} />}
+                  {isGeneratingBrief ? 'Generating…' : 'Generate Analysis'}
+                </Button>
               </div>
             )}
 
@@ -579,10 +678,11 @@ function CompanyOverviewSection({ contact }: { contact: any }) {
               <div className="flex items-center gap-2 text-xs">
                 <Globe size={12} className="text-muted-foreground" />
                 <a
-                  href={`https://${contact.website || contact.domain}`}
+                  href={normalizeUrl(contact.website || contact.domain)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
+                  onClick={e => e.stopPropagation()}
                 >
                   {contact.website || contact.domain}
                 </a>
