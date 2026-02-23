@@ -41,7 +41,7 @@ const SOURCE_MAP: Record<string, ContactSource> = {
 function guessMapping(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {};
   const patterns: Record<string, RegExp> = {
-    name: /^name$|full.?name|contact.?name|first.?name|fname/i,
+    name: /^name$|full.?name|contact.?name|first.?name|fname|^first$/i,
     company: /company|organization|org/i,
     title: /title|job.?title|position/i,
     rolePersona: /role|persona/i,

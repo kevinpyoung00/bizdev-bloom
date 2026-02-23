@@ -63,6 +63,7 @@ function detectSource(filename: string): string {
 
 // Fields the user can manually map — phone and industry are AUTO-RESOLVED and excluded
 const HEADER_MAP: Record<string, RegExp> = {
+  full_name: /^(full.?name|name|contact.?name)$/i,
   first_name: /first.?name|fname|^first$/i,
   last_name: /last.?name|lname|surname|^last$/i,
   title: /title|job.?title|position|^role$/i,
@@ -76,6 +77,7 @@ const HEADER_MAP: Record<string, RegExp> = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
+  full_name: 'Full Name (auto-split)',
   first_name: 'First Name',
   last_name: 'Last Name',
   title: 'Job Title',
@@ -88,7 +90,16 @@ const FIELD_LABELS: Record<string, string> = {
   hq_state: 'HQ State',
 };
 
-const REQUIRED_FIELDS = ['first_name', 'last_name', 'company_name'];
+// first_name + last_name required UNLESS full_name is mapped
+const REQUIRED_FIELDS = ['company_name'];
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  if (!trimmed) return { firstName: '', lastName: '' };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
 
 const LINKEDIN_URL_RE = /linkedin\.com/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -104,6 +115,11 @@ function autoMapHeaders(headers: string[]): Record<string, string> {
     const h = headers.find(h => re.test(h));
     if (h) map[field] = h;
   }
+  // If first_name & last_name are both mapped, drop full_name to avoid conflict
+  if (map.first_name && map.last_name) {
+    delete map.full_name;
+  }
+  // If only full_name is mapped (no first/last), that's fine — merge step will split it
   return map;
 }
 
@@ -381,9 +397,21 @@ export default function MultiSourceImporter({ open, onOpenChange }: Props) {
         }
       }
 
+      // ── Name: if full_name mapped, split it ──
+      let firstName = firstNonEmpty('first_name');
+      let lastName = firstNonEmpty('last_name');
+      if ((!firstName || !lastName)) {
+        const fullName = firstNonEmpty('full_name');
+        if (fullName) {
+          const split = splitFullName(fullName);
+          if (!firstName) firstName = split.firstName;
+          if (!lastName) lastName = split.lastName;
+        }
+      }
+
       results.push({
-        first_name: firstNonEmpty('first_name'),
-        last_name: firstNonEmpty('last_name'),
+        first_name: firstName,
+        last_name: lastName,
         title: titlePick?.value || '',
         email: emailPick?.value || '',
         phone: cleanPhone(phoneResult.phone_direct),
