@@ -496,8 +496,8 @@ function generateFallback(week: number, channel: string, data: any): { subject?:
   if (channel === "email") {
     if (week === 1) {
       return {
-        subject: `${strongest.label}: quick thought for ${name}`,
-        body: `Hi ${firstName},\n\nI noticed ${name}'s ${strongest.label}. Companies at this stage often find that a fresh look at their employee benefits strategy can unlock meaningful savings while improving the employee experience.\n\nAt OneDigital, we work with ${industryLabel} organizations like yours to align benefits with business goals, especially during periods of growth or transition.\n\nWould you have 10-15 minutes next week for a brief conversation?\n\nBest,`,
+        subject: `${strongest.label} at ${name}`,
+        body: `Hi ${firstName},\n\nI noticed ${name}'s ${strongest.label}. For a ${industryLabel} company at your stage, that often reshapes how benefits strategy needs to evolve.\n\nMany organizations in similar situations discover gaps in their current approach that quietly cost them in retention and renewals. Curious if that resonates.\n\nWorth a quick conversation?\n\nBest,`,
       };
     }
     return {
