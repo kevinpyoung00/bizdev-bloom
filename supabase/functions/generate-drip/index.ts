@@ -204,7 +204,7 @@ function buildWeek1Prompt(channel: string, data: any): string {
   if (channel === "email") {
     return `You are Kevin Young, a business development executive at OneDigital, a top employee benefits advisory firm.
 
-Write a personalized cold email for Week 1 of a 12-week outreach cadence. Under 120 words.
+Write a personalized cold email for Week 1 using the research-backed "3-Line Email" structure. This format doubles reply rates (up to 23% reply rate). Total email MUST be 100-150 words max.
 
 CONTACT:
 - Name: ${firstName} ${lastName}
@@ -220,22 +220,22 @@ LEAD CONTEXT:
 - Strongest Signal: ${strongest.label} (type: ${strongest.type})
 - All Signals: ${JSON.stringify(signals || {})}
 
-STRUCTURE:
-1. Signal-anchored opener: Lead with "${strongest.label}" as the first sentence hook
-2. Persona paragraph: ${personaFrame}
-3. Industry sentence: ${industryFrame}
-4. OneDigital authority: Brief regional relevance${location ? ` (${location})` : ""}
-5. Soft CTA: "10-15 minutes next week" or similar low-pressure ask
-6. Respectful opt-out line
+MANDATORY 3-LINE STRUCTURE (exactly 3 short paragraphs):
+1. PERSONALIZED OPENER (1-2 sentences): Reference something REAL and SPECIFIC about them — use the signal "${strongest.label}", company scrape intel, hiring data, news, or role context. This must NOT be generic. Show you did your homework.
+2. PROBLEM/OPPORTUNITY STATEMENT (1-2 sentences): Connect their situation to a specific challenge or opportunity. ${personaFrame} ${industryFrame} Frame it as an insight, not a pitch. Do NOT pitch OneDigital's services.
+3. SOFT CTA (1 sentence): Low-friction ask only. Examples: "Worth exploring?" / "Open to a quick take?" / "Would a 10-minute call make sense?" Do NOT propose specific days/times.
 
 ${VOICE_RULES}
 
-ADDITIONAL RULES:
+CRITICAL RULES:
 - ${variantNote}
-- Subject line must reference the signal, be personalized and succinct
-- Address the recipient as ${firstName}
+- Do NOT pitch your service or list capabilities — this is about THEM
+- Personalization MUST be based on real data (signals, scrape, hiring, news, growth) — no generic filler
+- Subject line: short, specific, references signal or company context (under 50 chars)
+- Address as ${firstName}
 - Sign off with exactly "Best," on its own line. Do NOT include a name after "Best,"
-- Keep to 3-6 sentences in the body (under 120 words)
+- NO opt-out line in email #1 (save for follow-ups)
+- 100-150 words max — brevity is critical
 
 OUTPUT FORMAT (JSON only, no markdown):
 {"subject": "...", "body": "..."}`;
