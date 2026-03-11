@@ -153,7 +153,7 @@ ${personaInstructions}
         body = parsed.body || "";
       } catch {
         body = content;
-        subject = `Quick note for ${firstName} — Kevin at OneDigital`;
+        subject = `Quick thought for ${firstName} at ${account.name}`;
       }
     }
 
