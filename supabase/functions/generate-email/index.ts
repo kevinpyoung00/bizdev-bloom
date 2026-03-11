@@ -98,7 +98,7 @@ ${personaInstructions}
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: "You are a B2B sales email writer. Always return valid JSON with 'subject' and 'body' keys. No markdown fences." },
+          { role: "system", content: "You are a B2B cold email writer using the proven 3-Line Email structure. Always return valid JSON with 'subject' and 'body' keys. No markdown fences. Never use em dashes." },
           { role: "user", content: prompt },
         ],
         tools: [
