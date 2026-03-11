@@ -53,30 +53,41 @@ serve(async (req) => {
       ? `Write to a CFO/Finance leader. Focus on cost optimization, renewal savings, plan design ROI, and financial impact of benefits decisions. Tone: data-driven, concise, executive-level.`
       : `Write to an HR/People leader. Focus on employee experience, retention, compliance burden, and benefits administration efficiency. Tone: empathetic, practical, partnership-oriented.`;
 
-    const prompt = `You are Kevin, a senior benefits advisor at OneDigital. Write a personalized cold outreach email.
+    const location = [account.hq_city, account.hq_state].filter(Boolean).join(", ");
+    const sizeLabel = account.employee_count ? `${account.employee_count}-employee` : "mid-market";
+
+    const prompt = `You are Kevin Young, a business development executive at OneDigital. Write a personalized cold email using the research-backed "3-Line Email" structure (doubles reply rates, up to 23% reply rate).
 
 ## Account
 - **Company**: ${account.name}
 - **Industry**: ${account.industry || "Unknown"}
-- **Employees**: ${account.employee_count || "Unknown"}
-- **Location**: ${account.hq_city || "?"}, ${account.hq_state || "?"}
+- **Employees**: ${sizeLabel}
+- **Location**: ${location || "US"}
 
 ## Recipient
 - **Name**: ${contactName}
 - **Title**: ${contactTitle}
 
-## Triggers
+## Triggers & Signals
 ${JSON.stringify(triggers, null, 2)}
 
-## Persona Instructions
+## Persona Context
 ${personaInstructions}
 
-## Format
-Return JSON with two keys:
-- "subject": email subject line (under 60 chars, no quotes)
-- "body": the email body in plain text with line breaks
+## MANDATORY 3-LINE STRUCTURE (exactly 3 short paragraphs):
+1. **PERSONALIZED OPENER** (1-2 sentences): Reference something REAL and SPECIFIC — use triggers, hiring data, news, growth signals, or role context. Must NOT be generic.
+2. **PROBLEM/OPPORTUNITY STATEMENT** (1-2 sentences): Connect their situation to a challenge or opportunity relevant to their persona. Frame as insight, NOT a pitch of your services.
+3. **SOFT CTA** (1 sentence): Low-friction ask. Examples: "Worth exploring?" / "Open to a quick take?" / "Would a 10-minute call make sense?"
 
-Keep the email under 150 words. Be specific — reference real triggers. Do NOT use generic filler. Sign off as "— Kevin".`;
+## Rules
+- 100-150 words max
+- Do NOT pitch OneDigital services or list capabilities
+- Personalization must be based on real data — no generic filler
+- Subject line: short, specific, references a trigger or company context (under 50 chars)
+- Address as ${firstName}
+- Sign off with exactly "Best," — no name after it
+- No opt-out line in this first email
+- Never use em dashes`;
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -87,7 +98,7 @@ Keep the email under 150 words. Be specific — reference real triggers. Do NOT 
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: "You are a B2B sales email writer. Always return valid JSON with 'subject' and 'body' keys. No markdown fences." },
+          { role: "system", content: "You are a B2B cold email writer using the proven 3-Line Email structure. Always return valid JSON with 'subject' and 'body' keys. No markdown fences. Never use em dashes." },
           { role: "user", content: prompt },
         ],
         tools: [
@@ -142,7 +153,7 @@ Keep the email under 150 words. Be specific — reference real triggers. Do NOT 
         body = parsed.body || "";
       } catch {
         body = content;
-        subject = `Quick note for ${firstName} — Kevin at OneDigital`;
+        subject = `Quick thought for ${firstName} at ${account.name}`;
       }
     }
 
