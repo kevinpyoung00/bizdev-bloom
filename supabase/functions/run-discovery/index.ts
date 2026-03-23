@@ -956,6 +956,36 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── Insert discovered candidates into lead_queue so they appear immediately ───
+    if (keptCandidates.length > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      const leadQueueRows = keptCandidates.map((c, i) => ({
+        account_id: c.id,
+        run_date: today,
+        priority_rank: i + 1,
+        score: c.high_intent ? 80 : 50,
+        reason: {
+          top_signal: c.top_signal,
+          intent_reasons: c.intent_reasons,
+          industry: c.inferred_industry,
+          subtype: c.entity_subtype,
+          source: "discovery",
+        },
+        status: "new",
+        claim_status: "new",
+        industry_key: c.inferred_industry || null,
+        campaign_tags: [],
+      }));
+
+      const { error: lqError } = await supabase.from("lead_queue").insert(leadQueueRows as any);
+      if (lqError) {
+        console.error("lead_queue insert error:", lqError.message);
+        scrapeErrors.push(`lead_queue insert: ${lqError.message}`);
+      } else {
+        console.log(`Inserted ${leadQueueRows.length} leads into lead_queue`);
+      }
+    }
+
     // ─── Diversity caps enforcement ───
     // Max 40% life sciences; ensure ≥10% for each selected industry (manual) or present category (auto)
     const LIFE_SCI_CAP = 0.4;

@@ -41,7 +41,7 @@ export default function DiscoveryControlPanel({ open, onOpenChange, onRun, isRun
   const [industries, setIndustries] = useState<Set<string>>(new Set(['biotech_life_sciences']));
   const [triggers, setTriggers] = useState<Set<string>>(new Set(['funding']));
   const [geoStates, setGeoStates] = useState<Set<string>>(new Set(['MA']));
-  const [companySize, setCompanySize] = useState('50-149');
+  const [companySizes, setCompanySizes] = useState<Set<string>>(new Set(['50-149']));
   const [discoveryType, setDiscoveryType] = useState('full');
   const [resultCount, setResultCount] = useState(50);
   const [overrideMaNe, setOverrideMaNe] = useState(false);
