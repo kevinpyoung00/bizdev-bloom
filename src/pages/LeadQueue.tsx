@@ -895,6 +895,10 @@ export default function LeadQueue() {
                   {bulkRestore.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RotateCcw size={12} className="mr-1" />}
                   Restore Selected
                 </Button>
+                <Button size="sm" className="h-7 text-xs bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDeleteRejected}>
+                  <Trash2 size={12} className="mr-1" />
+                  Delete from System
+                </Button>
                 <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setRejectedSelectedIds(new Set())}>
                   Clear
                 </Button>
@@ -911,7 +915,7 @@ export default function LeadQueue() {
                       <TableHead>Company</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Rejected At</TableHead>
-                      <TableHead className="w-28">Actions</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -929,9 +933,28 @@ export default function LeadQueue() {
                           <TableCell className="text-sm text-muted-foreground">{lead.rejected_reason || '—'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{lead.rejected_at ? new Date(lead.rejected_at).toLocaleDateString() : '—'}</TableCell>
                           <TableCell>
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => restoreLead.mutate(lead.id)} disabled={restoreLead.isPending}>
-                              <RotateCcw size={12} /> Restore
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => restoreLead.mutate(lead.id)} disabled={restoreLead.isPending}>
+                                <RotateCcw size={12} /> Restore
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs gap-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                onClick={async () => {
+                                  const confirmed = window.confirm(`Delete ${lead.account?.name || 'this rejected lead'} from the system? This cannot be undone.`);
+                                  if (!confirmed) return;
+                                  try {
+                                    await deleteAccountsForLeadIds([lead.id]);
+                                    await invalidateLeadViews();
+                                    toast.success('Deleted from system');
+                                  } catch (error: any) {
+                                    toast.error(error.message || 'Delete failed');
+                                  }
+                                }}
+                              >
+                                <Trash2 size={12} /> Delete
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
