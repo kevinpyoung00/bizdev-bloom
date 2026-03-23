@@ -23,7 +23,7 @@ export interface DiscoveryPanelParams {
   industries: string[];
   triggers: string[];
   geography: string[];
-  company_size: string;
+  company_size: string[];
   discovery_type: string;
   result_count: number;
   override_ma_ne: boolean;
@@ -41,7 +41,7 @@ export default function DiscoveryControlPanel({ open, onOpenChange, onRun, isRun
   const [industries, setIndustries] = useState<Set<string>>(new Set(['biotech_life_sciences']));
   const [triggers, setTriggers] = useState<Set<string>>(new Set(['funding']));
   const [geoStates, setGeoStates] = useState<Set<string>>(new Set(['MA']));
-  const [companySize, setCompanySize] = useState('50-149');
+  const [companySizes, setCompanySizes] = useState<Set<string>>(new Set(['50-149']));
   const [discoveryType, setDiscoveryType] = useState('full');
   const [resultCount, setResultCount] = useState(50);
   const [overrideMaNe, setOverrideMaNe] = useState(false);
@@ -80,7 +80,7 @@ export default function DiscoveryControlPanel({ open, onOpenChange, onRun, isRun
       industries: Array.from(industries),
       triggers: Array.from(triggers),
       geography: Array.from(geoStates),
-      company_size: companySize,
+      company_size: Array.from(companySizes),
       discovery_type: discoveryType,
       result_count: resultCount,
       override_ma_ne: overrideMaNe,
@@ -187,14 +187,20 @@ export default function DiscoveryControlPanel({ open, onOpenChange, onRun, isRun
 
             {/* B.4 Company Size */}
             <div>
-              <Label className="text-sm font-semibold">Company Size</Label>
+              <Label className="text-sm font-semibold">Company Size (select multiple)</Label>
               <div className="flex gap-2 mt-2">
                 {COMPANY_SIZES.map(cs => (
                   <Badge
                     key={cs.key}
-                    variant={companySize === cs.key ? 'default' : 'outline'}
+                    variant={companySizes.has(cs.key) ? 'default' : 'outline'}
                     className="cursor-pointer text-xs px-3 py-1"
-                    onClick={() => setCompanySize(cs.key)}
+                    onClick={() => {
+                      setCompanySizes(prev => {
+                        const next = new Set(prev);
+                        if (next.has(cs.key)) next.delete(cs.key); else next.add(cs.key);
+                        return next;
+                      });
+                    }}
                   >
                     {cs.label}
                   </Badge>
