@@ -248,7 +248,7 @@ export interface DiscoveryRunParams {
     industries?: string[];
     triggers?: string[];
     geography?: string[];
-    company_size?: string;
+    company_size?: string | string[];
     discovery_type?: string;
     result_count?: number;
     sub_sectors?: string[];
