@@ -820,9 +820,11 @@ Deno.serve(async (req) => {
         batch.map(([domain, info]) => scrapeDomain(domain, info))
       );
 
-      for (const result of results) {
+      for (let bIdx = 0; bIdx < results.length; bIdx++) {
+        const result = results[bIdx];
         if (result.status === "rejected" || !result.value) continue;
         const val = result.value;
+        const [rejDomain] = batch[bIdx];
 
         if ("rejected" in val) {
           const reason = val.rejected as string;
@@ -834,6 +836,22 @@ Deno.serve(async (req) => {
           else if (reason === "unknown_hq") rejectedUnknownHq++;
           else if (reason === "non_ne") discardedNonNE++;
           else rejectedGeneric++;
+
+          // Persist rejected domain so it won't reappear on next discovery run
+          if (rejDomain && !existingDomains.has(rejDomain.toLowerCase())) {
+            existingDomains.add(rejDomain.toLowerCase());
+            // Fire-and-forget insert of a minimal excluded account
+            supabase.from("accounts").insert({
+              name: rejDomain,
+              domain: rejDomain,
+              canonical_company_name: rejDomain.replace(/\.\w+$/, "").replace(/[^a-z0-9]/gi, " ").trim().toLowerCase(),
+              disposition: "discovery_rejected",
+              icp_class: reason,
+              source: "auto_discovery_rejected",
+              d365_status: "unknown",
+              needs_review: false,
+            } as any).then(() => {});
+          }
           continue;
         }
 
