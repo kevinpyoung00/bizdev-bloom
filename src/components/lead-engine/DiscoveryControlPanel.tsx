@@ -80,7 +80,7 @@ export default function DiscoveryControlPanel({ open, onOpenChange, onRun, isRun
       industries: Array.from(industries),
       triggers: Array.from(triggers),
       geography: Array.from(geoStates),
-      company_size: companySize,
+      company_size: Array.from(companySizes),
       discovery_type: discoveryType,
       result_count: resultCount,
       override_ma_ne: overrideMaNe,
