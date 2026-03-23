@@ -187,14 +187,20 @@ export default function DiscoveryControlPanel({ open, onOpenChange, onRun, isRun
 
             {/* B.4 Company Size */}
             <div>
-              <Label className="text-sm font-semibold">Company Size</Label>
+              <Label className="text-sm font-semibold">Company Size (select multiple)</Label>
               <div className="flex gap-2 mt-2">
                 {COMPANY_SIZES.map(cs => (
                   <Badge
                     key={cs.key}
-                    variant={companySize === cs.key ? 'default' : 'outline'}
+                    variant={companySizes.has(cs.key) ? 'default' : 'outline'}
                     className="cursor-pointer text-xs px-3 py-1"
-                    onClick={() => setCompanySize(cs.key)}
+                    onClick={() => {
+                      setCompanySizes(prev => {
+                        const next = new Set(prev);
+                        if (next.has(cs.key)) next.delete(cs.key); else next.add(cs.key);
+                        return next;
+                      });
+                    }}
                   >
                     {cs.label}
                   </Badge>
