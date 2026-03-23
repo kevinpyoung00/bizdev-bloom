@@ -23,7 +23,7 @@ export interface DiscoveryPanelParams {
   industries: string[];
   triggers: string[];
   geography: string[];
-  company_size: string;
+  company_size: string[];
   discovery_type: string;
   result_count: number;
   override_ma_ne: boolean;
