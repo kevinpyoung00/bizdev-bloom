@@ -40,7 +40,7 @@ import type { BatchMeta } from '@/lib/batchLabel';
 import DiscoveryControlPanel, { type DiscoveryPanelParams } from '@/components/lead-engine/DiscoveryControlPanel';
 import PreviewCandidatesDrawer, { type PreviewCandidate } from '@/components/lead-engine/PreviewCandidatesDrawer';
 import DiscoverySummaryChip, { type DiscoverySummaryData } from '@/components/lead-engine/DiscoverySummaryChip';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ── Signal Pills Row with tooltips ──
 function SignalPillsRow({ leadSignals, triggers }: { leadSignals: any; triggers: any }) {
@@ -181,6 +181,7 @@ export default function LeadQueue() {
   const bulkReview = useBulkReviewLeads();
   const bulkReject = useBulkRejectLeads();
   const bulkRestore = useBulkRestoreLeads();
+  const queryClient = useQueryClient();
   const [selectedLead, setSelectedLead] = useState<LeadWithAccount | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -229,6 +230,67 @@ export default function LeadQueue() {
   const [discoverySummary, setDiscoverySummary] = useState<DiscoverySummaryData | null>(null);
   const [previewCandidates, setPreviewCandidates] = useState<PreviewCandidate[]>([]);
   const [keptBySubtype, setKeptBySubtype] = useState<Record<string, number>>({});
+
+  const invalidateLeadViews = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['lead-queue'] }),
+      queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] }),
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] }),
+      queryClient.invalidateQueries({ queryKey: ['pipeline'] }),
+      queryClient.invalidateQueries({ queryKey: ['today'] }),
+      queryClient.invalidateQueries({ queryKey: ['campaign-counts'] }),
+      queryClient.invalidateQueries({ queryKey: ['needs-review-accounts'] }),
+    ]);
+  };
+
+  const suppressAccountsForLeadIds = async (leadIds: string[]) => {
+    const accountIds = Array.from(new Set(
+      leads
+        .filter((lead) => leadIds.includes(lead.id))
+        .map((lead) => lead.account.id)
+        .filter(Boolean)
+    ));
+
+    if (accountIds.length === 0) return;
+
+    const { error } = await supabase
+      .from('accounts')
+      .update({ disposition: 'suppressed' } as any)
+      .in('id', accountIds);
+
+    if (error) throw error;
+  };
+
+  const deleteAccountsForLeadIds = async (leadIds: string[]) => {
+    const accountIds = Array.from(new Set(
+      [...leads, ...rejectedLeads as any[]]
+        .filter((lead: any) => leadIds.includes(lead.id))
+        .map((lead: any) => lead.account?.id)
+        .filter(Boolean)
+    ));
+
+    if (accountIds.length === 0) return { deletedAccounts: 0, deletedLeads: 0 };
+
+    const { error: contactsError } = await supabase
+      .from('contacts_le')
+      .delete()
+      .in('account_id', accountIds);
+    if (contactsError) throw contactsError;
+
+    const { error: queueError } = await supabase
+      .from('lead_queue')
+      .delete()
+      .in('account_id', accountIds);
+    if (queueError) throw queueError;
+
+    const { error: accountError } = await supabase
+      .from('accounts')
+      .delete()
+      .in('id', accountIds);
+    if (accountError) throw accountError;
+
+    return { deletedAccounts: accountIds.length, deletedLeads: leadIds.length };
+  };
 
   const filteredLeads = leads.filter(l => {
     const d365Status = (l.account as any).d365_status || 'unknown';
@@ -328,13 +390,40 @@ export default function LeadQueue() {
   const handleBulkReject = () => {
     const ids = filteredLeads.filter(l => selectedIds.has(l.id)).map(l => l.id);
     if (ids.length === 0) return;
-    bulkReject.mutate({ leadIds: ids, reason: 'bulk_reject_invalid_discovery' }, { onSuccess: () => setSelectedIds(new Set()) });
+    bulkReject.mutate({ leadIds: ids, reason: 'bulk_reject_invalid_discovery' }, {
+      onSuccess: async () => {
+        await suppressAccountsForLeadIds(ids);
+        await invalidateLeadViews();
+        setSelectedIds(new Set());
+        toast.success(`${ids.length} leads rejected and suppressed from future scoring`);
+      },
+    });
   };
 
   const handleBulkRestore = () => {
     const ids = Array.from(rejectedSelectedIds);
     if (ids.length === 0) return;
     bulkRestore.mutate(ids, { onSuccess: () => setRejectedSelectedIds(new Set()) });
+  };
+
+  const handleDeleteRejected = async () => {
+    const ids = Array.from(rejectedSelectedIds);
+    if (ids.length === 0) {
+      toast.info('Select rejected leads to delete');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${ids.length} rejected lead(s) and their account records from the system? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const result = await deleteAccountsForLeadIds(ids);
+      await invalidateLeadViews();
+      setRejectedSelectedIds(new Set());
+      toast.success(`Deleted ${result.deletedAccounts} account(s) from the system`);
+    } catch (error: any) {
+      toast.error(error.message || 'Delete failed');
+    }
   };
 
   const toggleRejectedSelect = (id: string) => {
@@ -404,8 +493,10 @@ export default function LeadQueue() {
     bulkReject.mutate(
       { leadIds: ids, reason: 'purge_today_batch' },
       {
-        onSuccess: () => {
-          toast.success(`Purged ${ids.length} unclaimed leads from today`);
+        onSuccess: async () => {
+          await suppressAccountsForLeadIds(ids);
+          await invalidateLeadViews();
+          toast.success(`Purged ${ids.length} unclaimed leads and suppressed them from future scoring`);
           setSelectedIds(new Set());
         },
       }
@@ -804,6 +895,10 @@ export default function LeadQueue() {
                   {bulkRestore.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RotateCcw size={12} className="mr-1" />}
                   Restore Selected
                 </Button>
+                <Button size="sm" className="h-7 text-xs bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleDeleteRejected}>
+                  <Trash2 size={12} className="mr-1" />
+                  Delete from System
+                </Button>
                 <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setRejectedSelectedIds(new Set())}>
                   Clear
                 </Button>
@@ -820,7 +915,7 @@ export default function LeadQueue() {
                       <TableHead>Company</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Rejected At</TableHead>
-                      <TableHead className="w-28">Actions</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -838,9 +933,28 @@ export default function LeadQueue() {
                           <TableCell className="text-sm text-muted-foreground">{lead.rejected_reason || '—'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{lead.rejected_at ? new Date(lead.rejected_at).toLocaleDateString() : '—'}</TableCell>
                           <TableCell>
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => restoreLead.mutate(lead.id)} disabled={restoreLead.isPending}>
-                              <RotateCcw size={12} /> Restore
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => restoreLead.mutate(lead.id)} disabled={restoreLead.isPending}>
+                                <RotateCcw size={12} /> Restore
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs gap-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                onClick={async () => {
+                                  const confirmed = window.confirm(`Delete ${lead.account?.name || 'this rejected lead'} from the system? This cannot be undone.`);
+                                  if (!confirmed) return;
+                                  try {
+                                    await deleteAccountsForLeadIds([lead.id]);
+                                    await invalidateLeadViews();
+                                    toast.success('Deleted from system');
+                                  } catch (error: any) {
+                                    toast.error(error.message || 'Delete failed');
+                                  }
+                                }}
+                              >
+                                <Trash2 size={12} /> Delete
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))

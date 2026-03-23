@@ -70,6 +70,13 @@ export function useRejectLead() {
 
   return useMutation({
     mutationFn: async ({ leadId, reason }: { leadId: string; reason: string }) => {
+      const { data: leadRow, error: leadLoadError } = await supabase
+        .from('lead_queue')
+        .select('account_id')
+        .eq('id', leadId)
+        .single();
+      if (leadLoadError) throw leadLoadError;
+
       const { error } = await supabase
         .from('lead_queue')
         .update({
@@ -79,6 +86,14 @@ export function useRejectLead() {
         } as any)
         .eq('id', leadId);
       if (error) throw error;
+
+      if (leadRow?.account_id) {
+        const { error: accountError } = await supabase
+          .from('accounts')
+          .update({ disposition: 'suppressed' } as any)
+          .eq('id', leadRow.account_id);
+        if (accountError) throw accountError;
+      }
 
       try {
         await supabase.from('audit_log').insert({
@@ -94,7 +109,8 @@ export function useRejectLead() {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
       queryClient.invalidateQueries({ queryKey: ['needs-review-accounts'] });
-      toast({ title: 'Lead rejected' });
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
+      toast({ title: 'Lead rejected and suppressed from future scoring' });
     },
     onError: (err: any) => {
       toast({ title: 'Reject failed', description: err.message, variant: 'destructive' });
@@ -200,15 +216,31 @@ export function useRestoreLead() {
 
   return useMutation({
     mutationFn: async (leadId: string) => {
+      const { data: leadRow, error: leadLoadError } = await supabase
+        .from('lead_queue')
+        .select('account_id')
+        .eq('id', leadId)
+        .single();
+      if (leadLoadError) throw leadLoadError;
+
       const { error } = await supabase
         .from('lead_queue')
         .update({ claim_status: 'new', status: 'pending', rejected_reason: null, rejected_at: null } as any)
         .eq('id', leadId);
       if (error) throw error;
+
+      if (leadRow?.account_id) {
+        const { error: accountError } = await supabase
+          .from('accounts')
+          .update({ disposition: 'active' } as any)
+          .eq('id', leadRow.account_id);
+        if (accountError) throw accountError;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
       toast({ title: 'Lead restored to queue' });
     },
     onError: (err: any) => {
@@ -295,6 +327,12 @@ export function useBulkRejectLeads() {
 
   return useMutation({
     mutationFn: async ({ leadIds, reason }: { leadIds: string[]; reason: string }) => {
+      const { data: leadRows, error: leadLoadError } = await supabase
+        .from('lead_queue')
+        .select('id, account_id')
+        .in('id', leadIds);
+      if (leadLoadError) throw leadLoadError;
+
       const { error } = await supabase
         .from('lead_queue')
         .update({
@@ -304,6 +342,16 @@ export function useBulkRejectLeads() {
         } as any)
         .in('id', leadIds);
       if (error) throw error;
+
+      const accountIds = Array.from(new Set((leadRows || []).map((row) => row.account_id).filter(Boolean)));
+      if (accountIds.length > 0) {
+        const { error: accountError } = await supabase
+          .from('accounts')
+          .update({ disposition: 'suppressed' } as any)
+          .in('id', accountIds);
+        if (accountError) throw accountError;
+      }
+
       try {
         await supabase.from('audit_log').insert({
           actor: 'user', action: 'bulk_reject', entity_type: 'lead_queue',
@@ -314,7 +362,8 @@ export function useBulkRejectLeads() {
     onSuccess: (_, { leadIds }) => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
-      toast({ title: `${leadIds.length} leads rejected` });
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
+      toast({ title: `${leadIds.length} leads rejected and suppressed` });
     },
     onError: (err: any) => {
       toast({ title: 'Bulk reject failed', description: err.message, variant: 'destructive' });
@@ -328,11 +377,27 @@ export function useBulkRestoreLeads() {
 
   return useMutation({
     mutationFn: async (leadIds: string[]) => {
+      const { data: leadRows, error: leadLoadError } = await supabase
+        .from('lead_queue')
+        .select('id, account_id')
+        .in('id', leadIds);
+      if (leadLoadError) throw leadLoadError;
+
       const { error } = await supabase
         .from('lead_queue')
         .update({ claim_status: 'new', status: 'pending', rejected_reason: null, rejected_at: null } as any)
         .in('id', leadIds);
       if (error) throw error;
+
+      const accountIds = Array.from(new Set((leadRows || []).map((row) => row.account_id).filter(Boolean)));
+      if (accountIds.length > 0) {
+        const { error: accountError } = await supabase
+          .from('accounts')
+          .update({ disposition: 'active' } as any)
+          .in('id', accountIds);
+        if (accountError) throw accountError;
+      }
+
       try {
         await supabase.from('audit_log').insert({
           actor: 'user', action: 'bulk_restore', entity_type: 'lead_queue',
@@ -343,6 +408,7 @@ export function useBulkRestoreLeads() {
     onSuccess: (_, ids) => {
       queryClient.invalidateQueries({ queryKey: ['lead-queue'] });
       queryClient.invalidateQueries({ queryKey: ['lead-queue-rejected'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-stats'] });
       toast({ title: `${ids.length} leads restored to queue` });
     },
     onError: (err: any) => {
