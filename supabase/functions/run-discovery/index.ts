@@ -637,13 +637,18 @@ Deno.serve(async (req) => {
     const recentDomains = new Set<string>();
     const recentCanonicals = new Set<string>();
 
+    // Helper to strip protocol/www from domain for consistent matching
+    function normalizeDomainForMatch(d: string): string {
+      return d.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+    }
+
     for (const a of existingAccounts || []) {
-      if (a.domain) existingDomains.add(a.domain.toLowerCase());
+      if (a.domain) existingDomains.add(normalizeDomainForMatch(a.domain));
       if (a.canonical_company_name) existingCanonicals.set(a.canonical_company_name.toLowerCase(), a.id);
       if (a.name) existingTitles.add(normalizeTitle(a.name));
       // Check if created within last 30 days (for repeat suppression)
       if (a.created_at && new Date(a.created_at) >= thirtyDaysAgo) {
-        if (a.domain) recentDomains.add(a.domain.toLowerCase());
+        if (a.domain) recentDomains.add(normalizeDomainForMatch(a.domain));
         if (a.canonical_company_name) recentCanonicals.add(a.canonical_company_name.toLowerCase());
       }
     }
