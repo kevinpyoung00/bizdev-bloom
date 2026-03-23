@@ -40,7 +40,7 @@ import type { BatchMeta } from '@/lib/batchLabel';
 import DiscoveryControlPanel, { type DiscoveryPanelParams } from '@/components/lead-engine/DiscoveryControlPanel';
 import PreviewCandidatesDrawer, { type PreviewCandidate } from '@/components/lead-engine/PreviewCandidatesDrawer';
 import DiscoverySummaryChip, { type DiscoverySummaryData } from '@/components/lead-engine/DiscoverySummaryChip';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ── Signal Pills Row with tooltips ──
 function SignalPillsRow({ leadSignals, triggers }: { leadSignals: any; triggers: any }) {
